@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { handlePush } from '../push';
-import { ReuniteApiClient } from '../../api';
+import { ReuniteApi, ReuniteApiError } from '../../api';
 
 const remotes = {
   push: jest.fn(),
@@ -15,8 +15,9 @@ jest.mock('@redocly/openapi-core', () => ({
 
 jest.mock('../../api', () => ({
   ...jest.requireActual('../../api'),
-  ReuniteApiClient: jest.fn().mockImplementation(function (this: any, ...args) {
+  ReuniteApi: jest.fn().mockImplementation(function (this: any, ...args) {
     this.remotes = remotes;
+    this.reportSunsetWarnings = jest.fn();
   }),
 }));
 
@@ -29,8 +30,8 @@ describe('handlePush()', () => {
 
   beforeEach(() => {
     remotes.getDefaultBranch.mockResolvedValueOnce('test-default-branch');
-    remotes.upsert.mockResolvedValueOnce({ id: 'test-remote-id' });
-    remotes.push.mockResolvedValueOnce({ branchName: 'uploaded-to-branch' });
+    remotes.upsert.mockResolvedValueOnce({ id: 'test-remote-id', mountPath: 'test-mount-path' });
+    remotes.push.mockResolvedValueOnce({ branchName: 'uploaded-to-branch', id: 'test-id' });
 
     jest.spyOn(fs, 'createReadStream').mockReturnValue('stream' as any);
 
@@ -63,8 +64,8 @@ describe('handlePush()', () => {
     pathRelativeSpy.mockImplementationOnce((_, p) => p);
     pathDirnameSpy.mockImplementation((_: string) => '.');
 
-    await handlePush(
-      {
+    await handlePush({
+      argv: {
         domain: 'test-domain',
         'mount-path': 'test-mount-path',
         organization: 'test-org',
@@ -81,8 +82,9 @@ describe('handlePush()', () => {
         files: ['test-file'],
         'max-execution-time': 10,
       },
-      mockConfig
-    );
+      config: mockConfig,
+      version: 'cli-version',
+    });
 
     expect(remotes.getDefaultBranch).toHaveBeenCalledWith('test-org', 'test-project');
     expect(remotes.upsert).toHaveBeenCalledWith('test-org', 'test-project', {
@@ -118,6 +120,45 @@ describe('handlePush()', () => {
     );
   });
 
+  it('should return push id', async () => {
+    const mockConfig = { apis: {} } as any;
+    process.env.REDOCLY_AUTHORIZATION = 'test-api-key';
+
+    fsStatSyncSpy.mockReturnValueOnce({
+      isDirectory() {
+        return false;
+      },
+    } as any);
+
+    pathResolveSpy.mockImplementationOnce((p) => p);
+    pathRelativeSpy.mockImplementationOnce((_, p) => p);
+    pathDirnameSpy.mockImplementation((_: string) => '.');
+
+    const result = await handlePush({
+      argv: {
+        domain: 'test-domain',
+        'mount-path': 'test-mount-path',
+        organization: 'test-org',
+        project: 'test-project',
+        branch: 'test-branch',
+        namespace: 'test-namespace',
+        repository: 'test-repository',
+        'commit-sha': 'test-commit-sha',
+        'commit-url': 'test-commit-url',
+        'default-branch': 'test-branch',
+        'created-at': 'test-created-at',
+        author: 'TestAuthor <test-author@mail.com>',
+        message: 'Test message',
+        files: ['test-file'],
+        'max-execution-time': 10,
+      },
+      config: mockConfig,
+      version: 'cli-version',
+    });
+
+    expect(result).toEqual({ pushId: 'test-id' });
+  });
+
   it('should collect files from directory and preserve file structure', async () => {
     const mockConfig = { apis: {} } as any;
     process.env.REDOCLY_AUTHORIZATION = 'test-api-key';
@@ -150,8 +191,8 @@ describe('handlePush()', () => {
       throw new Error('Not a directory');
     });
 
-    await handlePush(
-      {
+    await handlePush({
+      argv: {
         domain: 'test-domain',
         'mount-path': 'test-mount-path',
         organization: 'test-org',
@@ -163,8 +204,9 @@ describe('handlePush()', () => {
         files: ['test-folder'],
         'max-execution-time': 10,
       },
-      mockConfig
-    );
+      config: mockConfig,
+      version: 'cli-version',
+    });
 
     expect(remotes.push).toHaveBeenCalledWith(
       expect.anything(),
@@ -192,8 +234,8 @@ describe('handlePush()', () => {
     const mockConfig = { apis: {} } as any;
     process.env.REDOCLY_AUTHORIZATION = 'test-api-key';
 
-    await handlePush(
-      {
+    await handlePush({
+      argv: {
         domain: 'test-domain',
         'mount-path': 'test-mount-path',
         organization: 'test-org',
@@ -205,8 +247,9 @@ describe('handlePush()', () => {
         files: [],
         'max-execution-time': 10,
       },
-      mockConfig
-    );
+      config: mockConfig,
+      version: 'cli-version',
+    });
 
     expect(remotes.getDefaultBranch).not.toHaveBeenCalled();
     expect(remotes.upsert).not.toHaveBeenCalled();
@@ -227,8 +270,8 @@ describe('handlePush()', () => {
     pathRelativeSpy.mockImplementationOnce((_, p) => p);
     pathDirnameSpy.mockImplementation((_: string) => '.');
 
-    await handlePush(
-      {
+    await handlePush({
+      argv: {
         domain: 'test-domain',
         'mount-path': 'test-mount-path',
         project: 'test-project',
@@ -239,8 +282,9 @@ describe('handlePush()', () => {
         'default-branch': 'main',
         'max-execution-time': 10,
       },
-      mockConfig
-    );
+      config: mockConfig,
+      version: 'cli-version',
+    });
 
     expect(remotes.getDefaultBranch).toHaveBeenCalledWith(
       'test-org-from-config',
@@ -274,8 +318,8 @@ describe('handlePush()', () => {
     pathRelativeSpy.mockImplementationOnce((_, p) => p);
     pathDirnameSpy.mockImplementation((_: string) => '.');
 
-    await handlePush(
-      {
+    await handlePush({
+      argv: {
         'mount-path': 'test-mount-path',
         project: 'test-project',
         branch: 'test-branch',
@@ -285,9 +329,57 @@ describe('handlePush()', () => {
         files: ['test-file'],
         'max-execution-time': 10,
       },
-      mockConfig
-    );
+      config: mockConfig,
+      version: 'cli-version',
+    });
 
-    expect(ReuniteApiClient).toBeCalledWith('test-domain-from-env', 'test-api-key');
+    expect(ReuniteApi).toBeCalledWith({
+      domain: 'test-domain-from-env',
+      apiKey: 'test-api-key',
+      version: 'cli-version',
+      command: 'push',
+    });
+  });
+
+  it('should print error message', async () => {
+    const mockConfig = { apis: {} } as any;
+    process.env.REDOCLY_AUTHORIZATION = 'test-api-key';
+
+    remotes.push.mockRestore();
+    remotes.push.mockRejectedValueOnce(new ReuniteApiError('Deprecated.', 412));
+
+    fsStatSyncSpy.mockReturnValueOnce({
+      isDirectory() {
+        return false;
+      },
+    } as any);
+
+    pathResolveSpy.mockImplementationOnce((p) => p);
+    pathRelativeSpy.mockImplementationOnce((_, p) => p);
+    pathDirnameSpy.mockImplementation((_: string) => '.');
+
+    expect(
+      handlePush({
+        argv: {
+          domain: 'test-domain',
+          'mount-path': 'test-mount-path',
+          organization: 'test-org',
+          project: 'test-project',
+          branch: 'test-branch',
+          namespace: 'test-namespace',
+          repository: 'test-repository',
+          'commit-sha': 'test-commit-sha',
+          'commit-url': 'test-commit-url',
+          'default-branch': 'test-branch',
+          'created-at': 'test-created-at',
+          author: 'TestAuthor <test-author@mail.com>',
+          message: 'Test message',
+          files: ['test-file'],
+          'max-execution-time': 10,
+        },
+        config: mockConfig,
+        version: 'cli-version',
+      })
+    ).rejects.toThrow('✗ File upload failed. Reason: Deprecated.');
   });
 });

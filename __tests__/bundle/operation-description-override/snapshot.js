@@ -12,7 +12,7 @@ info:
   contact:
     name: qa
     url: https://swagger.io/specification/#definitions
-    email: email@redoc.ly
+    email: email@redocly.com
 servers:
   - url: //petstore.swagger.io/v2
     description: Default server
@@ -47,7 +47,7 @@ paths:
           description: ok
 components: {}
 
-bundling ./openapi.yaml...
-📦 Created a bundle for ./openapi.yaml at stdout <test>ms.
+bundling openapi.yaml...
+📦 Created a bundle for openapi.yaml at stdout <test>ms.
 
 `;

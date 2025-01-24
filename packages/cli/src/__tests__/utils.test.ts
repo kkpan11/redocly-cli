@@ -15,6 +15,7 @@ import {
   getAndValidateFileExtension,
   writeToFileByExtension,
 } from '../utils/miscellaneous';
+import { sanitizeLocale, sanitizePath, getPlatformSpawnArgs } from '../utils/platform';
 import {
   ResolvedApi,
   Totals,
@@ -27,6 +28,7 @@ import { blue, red, yellow } from 'colorette';
 import { existsSync, statSync } from 'fs';
 import * as path from 'path';
 import * as process from 'process';
+import { ConfigApis } from '../types';
 
 jest.mock('os');
 jest.mock('colorette');
@@ -76,20 +78,6 @@ describe('pathToFilename', () => {
   it('should use correct path separator', () => {
     const processedPath = pathToFilename('/user/createWithList', '_');
     expect(processedPath).toEqual('user_createWithList');
-  });
-});
-
-describe('getFallbackApisOrExit', () => {
-  it('should find alias by filename', async () => {
-    (existsSync as jest.Mock<any, any>).mockImplementationOnce(() => true);
-    const entry = await getFallbackApisOrExit(['./test.yaml'], {
-      apis: {
-        main: {
-          root: 'test.yaml',
-        },
-      },
-    } as any);
-    expect(entry).toEqual([{ path: './test.yaml', alias: 'main' }]);
   });
 });
 
@@ -190,6 +178,7 @@ describe('getFallbackApisOrExit', () => {
       {
         alias: 'main',
         path: 'someFile.yaml',
+        output: undefined,
       },
     ]);
   });
@@ -277,6 +266,43 @@ describe('getFallbackApisOrExit', () => {
       {
         alias: 'main',
         path: 'https://someLinkt/petstore.yaml?main',
+        output: undefined,
+      },
+    ]);
+
+    (isAbsoluteUrl as jest.Mock<any, any>).mockReset();
+  });
+
+  it('should find alias by filename', async () => {
+    (existsSync as jest.Mock<any, any>).mockImplementationOnce(() => true);
+    const entry = await getFallbackApisOrExit(['./test.yaml'], {
+      apis: {
+        main: {
+          root: 'test.yaml',
+          styleguide: {},
+        },
+      },
+    });
+    expect(entry).toEqual([{ path: './test.yaml', alias: 'main' }]);
+  });
+
+  it('should return apis from config with paths and outputs resolved relatively to the config location', async () => {
+    (existsSync as jest.Mock<any, any>).mockImplementationOnce(() => true);
+    const entry = await getFallbackApisOrExit(undefined, {
+      apis: {
+        main: {
+          root: 'test.yaml',
+          output: 'output/test.yaml',
+          styleguide: {},
+        },
+      },
+      configFile: 'project-folder/redocly.yaml',
+    });
+    expect(entry).toEqual([
+      {
+        path: expect.stringMatching(/project\-folder\/test\.yaml$/),
+        output: expect.stringMatching(/project\-folder\/output\/test\.yaml$/),
+        alias: 'main',
       },
     ]);
   });
@@ -415,7 +441,7 @@ describe('handleErrors', () => {
   });
 
   it('should handle ResolveError', () => {
-    const resolveError = new ResolveError(new Error('File not found'));
+    const resolveError = new ResolveError(new Error('File not found.'));
     expect(() => handleError(resolveError, ref)).toThrowError(HandledError);
     expect(redColoretteMocks).toHaveBeenCalledTimes(1);
     expect(process.stderr.write).toHaveBeenCalledWith(
@@ -424,7 +450,7 @@ describe('handleErrors', () => {
   });
 
   it('should handle YamlParseError', () => {
-    const yamlParseError = new YamlParseError(new Error('Invalid yaml'), {} as any);
+    const yamlParseError = new YamlParseError(new Error('Invalid yaml.'), {} as any);
     expect(() => handleError(yamlParseError, ref)).toThrowError(HandledError);
     expect(redColoretteMocks).toHaveBeenCalledTimes(1);
     expect(process.stderr.write).toHaveBeenCalledWith(
@@ -451,7 +477,7 @@ describe('handleErrors', () => {
   });
 
   it('should throw unknown error', () => {
-    const testError = new Error('Test error');
+    const testError = new Error('Test error.');
     expect(() => handleError(testError, ref)).toThrowError(HandledError);
     expect(process.stderr.write).toHaveBeenCalledWith(
       `Something went wrong when processing openapi/test.yaml:\n\n  - Test error.\n\n`
@@ -474,6 +500,8 @@ describe('checkIfRulesetExist', () => {
       oas3_0: {},
       oas3_1: {},
       async2: {},
+      async3: {},
+      arazzo1: {},
     };
     expect(() => checkIfRulesetExist(rules)).toThrowError(
       '⚠️ No rules were configured. Learn how to configure rules: https://redocly.com/docs/cli/rules/'
@@ -589,28 +617,98 @@ describe('cleanRawInput', () => {
       expect(stderrMock).toHaveBeenCalledWith(`Unsupported file extension: xml. Using yaml.\n`);
     });
   });
+});
 
-  describe('writeToFileByExtension', () => {
-    beforeEach(() => {
-      jest.spyOn(process.stderr, 'write').mockImplementation(jest.fn());
-      (yellow as jest.Mock<any, any>).mockImplementation((text: string) => text);
+describe('writeToFileByExtension', () => {
+  beforeEach(() => {
+    jest.spyOn(process.stderr, 'write').mockImplementation(jest.fn());
+    (yellow as jest.Mock<any, any>).mockImplementation((text: string) => text);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('should call stringifyYaml function', () => {
+    writeToFileByExtension('test data', 'test.yaml');
+    expect(stringifyYaml).toHaveBeenCalledWith('test data', { noRefs: false });
+    expect(process.stderr.write).toHaveBeenCalledWith(`test data`);
+  });
+
+  it('should call JSON.stringify function', () => {
+    const stringifySpy = jest.spyOn(JSON, 'stringify').mockImplementation((data) => data);
+    writeToFileByExtension('test data', 'test.json');
+    expect(stringifySpy).toHaveBeenCalledWith('test data', null, 2);
+    expect(process.stderr.write).toHaveBeenCalledWith(`test data`);
+  });
+});
+
+describe('runtime platform', () => {
+  describe('sanitizePath', () => {
+    test.each([
+      ['C:\\Program Files\\App', 'C:\\Program Files\\App'],
+      ['/usr/local/bin/app', '/usr/local/bin/app'],
+      ['invalid|path?name*', 'invalidpathname'],
+      ['', ''],
+      ['<>:"|?*', ':'],
+      ['C:/Program Files\\App', 'C:/Program Files\\App'],
+      ['path\nname\r', 'pathname'],
+      ['/usr/local; rm -rf /', '/usr/local rm -rf /'],
+      ['C:\\data&& dir', 'C:\\data dir'],
+    ])('should sanitize path %s to %s', (input, expected) => {
+      expect(sanitizePath(input)).toBe(expected);
     });
+  });
+
+  describe('sanitizeLocale', () => {
+    test.each([
+      ['en-US', 'en-US'],
+      ['fr_FR', 'fr_FR'],
+      ['en<>US', 'enUS'],
+      ['fr@FR', 'fr@FR'],
+      ['en_US@#$%', 'en_US@'],
+      [' en-US ', 'en-US'],
+      ['', ''],
+    ])('should sanitize locale %s to %s', (input, expected) => {
+      expect(sanitizeLocale(input)).toBe(expected);
+    });
+  });
+
+  describe('getPlatformSpawnArgs', () => {
+    const originalPlatform = process.platform;
 
     afterEach(() => {
-      jest.restoreAllMocks();
+      Object.defineProperty(process, 'platform', {
+        value: originalPlatform,
+      });
     });
 
-    it('should call stringifyYaml function', () => {
-      writeToFileByExtension('test data', 'test.yaml');
-      expect(stringifyYaml).toHaveBeenCalledWith('test data', { noRefs: false });
-      expect(process.stderr.write).toHaveBeenCalledWith(`test data`);
+    it('should return args for Windows platform', () => {
+      Object.defineProperty(process, 'platform', {
+        value: 'win32',
+      });
+
+      const result = getPlatformSpawnArgs();
+
+      expect(result).toEqual({
+        npxExecutableName: 'npx.cmd',
+        sanitize: expect.any(Function),
+        shell: true,
+      });
     });
 
-    it('should call JSON.stringify function', () => {
-      const stringifySpy = jest.spyOn(JSON, 'stringify').mockImplementation((data) => data);
-      writeToFileByExtension('test data', 'test.json');
-      expect(stringifySpy).toHaveBeenCalledWith('test data', null, 2);
-      expect(process.stderr.write).toHaveBeenCalledWith(`test data`);
+    it('should return args for non-Windows platform', () => {
+      Object.defineProperty(process, 'platform', {
+        value: 'linux',
+      });
+
+      const result = getPlatformSpawnArgs();
+
+      expect(result).toEqual({
+        npxExecutableName: 'npx',
+        sanitize: expect.any(Function),
+        shell: false,
+      });
     });
   });
 });

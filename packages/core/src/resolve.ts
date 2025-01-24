@@ -1,11 +1,21 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { OasRef } from './typings/openapi';
-import { isRef, joinPointer, escapePointer, parseRef, isAbsoluteUrl, isAnchor } from './ref-utils';
-import type { YAMLNode, LoadOptions } from 'yaml-ast-parser';
-import { NormalizedNodeType, isNamedType, SpecExtension } from './types';
+import {
+  isRef,
+  joinPointer,
+  escapePointer,
+  parseRef,
+  isAbsoluteUrl,
+  isAnchor,
+  isExternalValue,
+} from './ref-utils';
+import { isNamedType, SpecExtension } from './types';
 import { readFileFromUrl, parseYaml, nextTick } from './utils';
-import { ResolveConfig } from './config/types';
+
+import type { YAMLNode, LoadOptions } from 'yaml-ast-parser';
+import type { NormalizedNodeType } from './types';
+import type { ResolveConfig } from './config/types';
+import type { OasRef } from './typings/openapi';
 
 export type CollectedRefs = Map<string /* absoluteFilePath */, Document>;
 
@@ -116,7 +126,7 @@ export class BaseResolver {
         return new Source(absoluteRef, body, mimeType);
       } else {
         if (fs.lstatSync(absoluteRef).isDirectory()) {
-          throw new Error(`Expected a file but received a folder at ${absoluteRef}`);
+          throw new Error(`Expected a file but received a folder at ${absoluteRef}.`);
         }
         const content = await fs.promises.readFile(absoluteRef, 'utf-8');
         // In some cases file have \r\n line delimeters like on windows, we should skip it.
@@ -223,7 +233,7 @@ export async function resolveDocument(opts: {
 }): Promise<ResolvedRefMap> {
   const { rootDocument, externalRefResolver, rootType } = opts;
   const resolvedRefMap: ResolvedRefMap = new Map();
-  const seedNodes = new Set<string>(); // format "${type}::${absoluteRef}${pointer}"
+  const seenNodes = new Set<string>(); // format "${type}::${absoluteRef}${pointer}"
 
   const resolvePromises: Array<Promise<void>> = [];
   resolveRefsInParallel(rootDocument.parsed, rootDocument, '#/', rootType);
@@ -252,11 +262,11 @@ export async function resolveDocument(opts: {
       }
 
       const nodeId = `${type.name}::${nodeAbsoluteRef}`;
-      if (seedNodes.has(nodeId)) {
+      if (seenNodes.has(nodeId)) {
         return;
       }
 
-      seedNodes.add(nodeId);
+      seenNodes.add(nodeId);
 
       const [_, anchor] = Object.entries(node).find(([key]) => key === '$anchor') || [];
       if (anchor) {
@@ -269,8 +279,20 @@ export async function resolveDocument(opts: {
         if (itemsType === undefined && type !== unknownType && type !== SpecExtension) {
           return;
         }
+        const isTypeAFunction = typeof itemsType === 'function';
         for (let i = 0; i < node.length; i++) {
-          walk(node[i], itemsType || unknownType, joinPointer(nodeAbsoluteRef, i));
+          const itemType = isTypeAFunction
+            ? itemsType(node[i], joinPointer(nodeAbsoluteRef, i))
+            : itemsType;
+          // we continue resolving unknown types, but stop early on known scalars
+          if (itemType === undefined && type !== unknownType && type !== SpecExtension) {
+            continue;
+          }
+          walk(
+            node[i],
+            isNamedType(itemType) ? itemType : unknownType,
+            joinPointer(nodeAbsoluteRef, i)
+          );
         }
         return;
       }
@@ -310,6 +332,28 @@ export async function resolveDocument(opts: {
           prev: null,
           node,
         }).then((resolvedRef) => {
+          if (resolvedRef.resolved) {
+            resolveRefsInParallel(
+              resolvedRef.node,
+              resolvedRef.document,
+              resolvedRef.nodePointer!,
+              type
+            );
+          }
+        });
+        resolvePromises.push(promise);
+      }
+
+      // handle example.externalValue as reference
+      if (isExternalValue(node)) {
+        const promise = followRef(
+          rootNodeDocument,
+          { $ref: node.externalValue },
+          {
+            prev: null,
+            node,
+          }
+        ).then((resolvedRef) => {
           if (resolvedRef.resolved) {
             resolveRefsInParallel(
               resolvedRef.node,

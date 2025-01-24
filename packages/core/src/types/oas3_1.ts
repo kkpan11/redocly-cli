@@ -1,5 +1,8 @@
-import { NodeType, listOf, mapOf } from '.';
+import { listOf, mapOf } from '.';
 import { Oas3Types } from './oas3';
+
+import type { NodeType } from '.';
+import type { Oas3_1NodeType } from './redocly-yaml';
 
 const Root: NodeType = {
   properties: {
@@ -84,7 +87,7 @@ const Operation: NodeType = {
   extensionsPrefix: 'x-',
 };
 
-const Schema: NodeType = {
+export const Schema: NodeType = {
   properties: {
     $id: { type: 'string' },
     $anchor: { type: 'string' },
@@ -130,12 +133,13 @@ const Schema: NodeType = {
     if: 'Schema',
     then: 'Schema',
     else: 'Schema',
-    dependentSchemas: listOf('Schema'),
+    dependentSchemas: mapOf('Schema'),
+    dependentRequired: 'DependentRequired',
     prefixItems: listOf('Schema'),
     contains: 'Schema',
     minContains: { type: 'integer', minimum: 0 },
     maxContains: { type: 'integer', minimum: 0 },
-    patternProperties: { type: 'object' },
+    patternProperties: 'PatternProperties',
     propertyNames: 'Schema',
     unevaluatedItems: (value: unknown) => {
       if (typeof value === 'boolean') {
@@ -167,6 +171,7 @@ const Schema: NodeType = {
     format: { type: 'string' },
     contentEncoding: { type: 'string' },
     contentMediaType: { type: 'string' },
+    contentSchema: 'Schema',
     default: null,
     readOnly: { type: 'boolean' },
     writeOnly: { type: 'boolean' },
@@ -177,11 +182,13 @@ const Schema: NodeType = {
     const: null,
     $comment: { type: 'string' },
     'x-tags': { type: 'array', items: { type: 'string' } },
+    $dynamicAnchor: { type: 'string' },
+    $dynamicRef: { type: 'string' },
   },
   extensionsPrefix: 'x-',
 };
 
-const SchemaProperties: NodeType = {
+export const SchemaProperties: NodeType = {
   properties: {},
   additionalProperties: (value: any) => {
     if (typeof value === 'boolean') {
@@ -262,15 +269,22 @@ const SecurityScheme: NodeType = {
   extensionsPrefix: 'x-',
 };
 
-export const Oas3_1Types: Record<string, NodeType> = {
+export const DependentRequired: NodeType = {
+  properties: {},
+  additionalProperties: { type: 'array', items: { type: 'string' } },
+};
+
+export const Oas3_1Types: Record<Oas3_1NodeType, NodeType> = {
   ...Oas3Types,
   Info,
   Root,
   Schema,
   SchemaProperties,
+  PatternProperties: SchemaProperties,
   License,
   Components,
   NamedPathItems: mapOf('PathItem'),
   SecurityScheme,
   Operation,
+  DependentRequired,
 };

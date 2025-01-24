@@ -14,9 +14,8 @@ If per-API and root settings modify the same properties, per-API settings overri
 ## Patterned properties
 
 {% json-schema
-  schemaFilePath="./api.yaml"
-   options={
-    schemaExpansionLevel: 2,
+  schema={
+    "$ref": "./api.yaml"
   }
 /%}
 
@@ -28,8 +27,8 @@ apis:
     root: ./openapi/openapi.yaml
     labels:
       - production
-    theme:
-      openapi: {}
+    openapi: {}
+    output: ./openapi/bundled.yaml
 ```
 
 {% admonition type="warning" name="Important" %}

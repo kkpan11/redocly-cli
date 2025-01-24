@@ -1,3 +1,4 @@
+import type { Location } from '../ref-utils';
 import type { ProblemSeverity, UserContext } from '../walk';
 import type {
   Oas3PreprocessorsSet,
@@ -11,31 +12,25 @@ import type {
   Async2PreprocessorsSet,
   Async2DecoratorsSet,
   Async2RuleSet,
+  Async3PreprocessorsSet,
+  Async3DecoratorsSet,
+  Async3RuleSet,
+  Arazzo1RuleSet,
+  Arazzo1PreprocessorsSet,
+  Arazzo1DecoratorsSet,
   RuleMap,
 } from '../oas-types';
-
 import type { NodeType } from '../types';
-import { Location } from '../ref-utils';
 import type { SkipFunctionContext } from '../visitors';
-import {
-  BuiltInAsync2RuleId,
-  BuiltInCommonOASRuleId,
-  BuiltInCommonRuleId,
-  BuiltInOAS2RuleId,
-  BuiltInOAS3RuleId,
-} from '../types/redocly-yaml';
+import type { JSONSchema } from 'json-schema-to-ts';
 
 export type RuleSeverity = ProblemSeverity | 'off';
 
-export type RuleSettings = { severity: RuleSeverity };
+export type RuleSettings = { severity: RuleSeverity; message?: string };
 
 export type PreprocessorSeverity = RuleSeverity | 'on';
 
-export type RuleConfig =
-  | RuleSeverity
-  | ({
-      severity?: ProblemSeverity;
-    } & Record<string, any>);
+export type RuleConfig = RuleSeverity | (Partial<RuleSettings> & Record<string, any>);
 
 export type PreprocessorConfig =
   | PreprocessorSeverity
@@ -51,23 +46,29 @@ export type StyleguideRawConfig<T = undefined> = {
   doNotResolveExamples?: boolean;
   recommendedFallback?: boolean;
 
-  rules?: RuleMap<BuiltInCommonRuleId | BuiltInCommonOASRuleId, RuleConfig, T>;
-  oas2Rules?: RuleMap<BuiltInOAS2RuleId, RuleConfig, T>;
-  oas3_0Rules?: RuleMap<BuiltInOAS3RuleId, RuleConfig, T>;
-  oas3_1Rules?: RuleMap<BuiltInOAS3RuleId, RuleConfig, T>;
-  async2Rules?: RuleMap<BuiltInAsync2RuleId, RuleConfig, T>;
+  rules?: RuleMap<string, RuleConfig, T>;
+  oas2Rules?: RuleMap<string, RuleConfig, T>;
+  oas3_0Rules?: RuleMap<string, RuleConfig, T>;
+  oas3_1Rules?: RuleMap<string, RuleConfig, T>;
+  async2Rules?: RuleMap<string, RuleConfig, T>;
+  async3Rules?: RuleMap<string, RuleConfig, T>;
+  arazzo1Rules?: RuleMap<string, RuleConfig, T>;
 
   preprocessors?: Record<string, PreprocessorConfig>;
   oas2Preprocessors?: Record<string, PreprocessorConfig>;
   oas3_0Preprocessors?: Record<string, PreprocessorConfig>;
   oas3_1Preprocessors?: Record<string, PreprocessorConfig>;
   async2Preprocessors?: Record<string, PreprocessorConfig>;
+  async3Preprocessors?: Record<string, PreprocessorConfig>;
+  arazzo1Preprocessors?: Record<string, PreprocessorConfig>;
 
   decorators?: Record<string, DecoratorConfig>;
   oas2Decorators?: Record<string, DecoratorConfig>;
   oas3_0Decorators?: Record<string, DecoratorConfig>;
   oas3_1Decorators?: Record<string, DecoratorConfig>;
   async2Decorators?: Record<string, DecoratorConfig>;
+  async3Decorators?: Record<string, DecoratorConfig>;
+  arazzo1Decorators?: Record<string, DecoratorConfig>;
 };
 
 export type ApiStyleguideRawConfig = Omit<StyleguideRawConfig, 'plugins'>;
@@ -84,12 +85,16 @@ export type PreprocessorsConfig = {
   oas3?: Oas3PreprocessorsSet;
   oas2?: Oas2PreprocessorsSet;
   async2?: Async2PreprocessorsSet;
+  async3?: Async3PreprocessorsSet;
+  arazzo1?: Arazzo1PreprocessorsSet;
 };
 
 export type DecoratorsConfig = {
   oas3?: Oas3DecoratorsSet;
   oas2?: Oas2DecoratorsSet;
   async2?: Async2DecoratorsSet;
+  async3?: Async3DecoratorsSet;
+  arazzo1?: Arazzo1DecoratorsSet;
 };
 
 export type TypesExtensionFn = (
@@ -99,11 +104,15 @@ export type TypesExtensionFn = (
 
 export type TypeExtensionsConfig = Partial<Record<SpecMajorVersion, TypesExtensionFn>>;
 
-export type CustomRulesConfig = {
-  oas3?: Oas3RuleSet;
-  oas2?: Oas2RuleSet;
-  async2?: Async2RuleSet;
+export type RulesConfig<T> = {
+  oas3?: Oas3RuleSet<T>;
+  oas2?: Oas2RuleSet<T>;
+  async2?: Async2RuleSet<T>;
+  async3?: Async3RuleSet<T>;
+  arazzo1?: Arazzo1RuleSet<T>;
 };
+
+export type CustomRulesConfig = RulesConfig<undefined>;
 
 export type AssertionContext = Partial<UserContext> & SkipFunctionContext & { node: any };
 
@@ -116,15 +125,46 @@ export type CustomFunction = (
 
 export type AssertionsConfig = Record<string, CustomFunction>;
 
-export type Plugin = {
+export type Plugin<T = undefined> = {
   id: string;
+
   configs?: Record<string, PluginStyleguideConfig>;
-  rules?: CustomRulesConfig;
+  rules?: RulesConfig<T>;
   preprocessors?: PreprocessorsConfig;
   decorators?: DecoratorsConfig;
   typeExtension?: TypeExtensionsConfig;
   assertions?: AssertionsConfig;
+
+  // Realm properties
+  path?: string;
+  absolutePath?: string;
+  processContent?: (actions: any, content: any) => Promise<void> | void;
+  afterRoutesCreated?: (actions: any, content: any) => Promise<void> | void;
+  loaders?: Record<
+    string,
+    (path: string, context: any, reportError: (error: Error) => void) => Promise<unknown>
+  >;
+  requiredEntitlements?: string[];
+  ssoConfigSchema?: JSONSchema;
+  redoclyConfigSchema?: JSONSchema;
+  ejectIgnore?: string[];
 };
+
+type PluginCreatorOptions = {
+  contentDir: string;
+};
+
+export type PluginCreator = (options: PluginCreatorOptions) => Plugin | Promise<Plugin>;
+
+export type ImportedPlugin =
+  // ES Modules
+  | {
+      default?: PluginCreator;
+    }
+  // CommonJS
+  | PluginCreator
+  // Deprecated format
+  | Plugin;
 
 export type PluginStyleguideConfig<T = undefined> = Omit<
   StyleguideRawConfig<T>,
@@ -152,6 +192,7 @@ export type RawResolveConfig = {
 
 export type HttpResolveConfig = {
   headers: ResolveHeader[];
+  // eslint-disable-next-line @typescript-eslint/ban-types
   customFetch?: Function;
 };
 
@@ -174,6 +215,7 @@ export type DeprecatedInRawConfig = {
 
 export type Api = {
   root: string;
+  output?: string;
   styleguide?: ApiStyleguideRawConfig;
 } & ThemeConfig;
 
@@ -227,32 +269,26 @@ export type ThemeRawConfig = {
   mockServer?: Record<string, any>;
 };
 
+// TODO: sync types
 export type RulesFields =
   | 'rules'
   | 'oas2Rules'
   | 'oas3_0Rules'
   | 'oas3_1Rules'
   | 'async2Rules'
+  | 'async3Rules'
+  | 'arazzo1Rules'
   | 'preprocessors'
   | 'oas2Preprocessors'
   | 'oas3_0Preprocessors'
   | 'oas3_1Preprocessors'
   | 'async2Preprocessors'
+  | 'async3Preprocessors'
+  | 'arazzo1Preprocessors'
   | 'decorators'
   | 'oas2Decorators'
   | 'oas3_0Decorators'
   | 'oas3_1Decorators'
-  | 'async2Decorators';
-
-export enum AuthProviderType {
-  OIDC = 'OIDC',
-  SAML2 = 'SAML2',
-  BASIC = 'BASIC',
-}
-
-export enum ApigeeDevOnboardingIntegrationAuthType {
-  SERVICE_ACCOUNT = 'SERVICE_ACCOUNT',
-  OAUTH2 = 'OAUTH2',
-}
-
-export const DEFAULT_TEAM_CLAIM_NAME = 'https://redocly.com/sso/teams';
+  | 'async2Decorators'
+  | 'async3Decorators'
+  | 'arazzo1Decorators';

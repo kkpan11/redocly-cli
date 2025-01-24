@@ -1,11 +1,16 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { Config, slash } from '@redocly/openapi-core';
-import { exitWithError, HandledError, printExecutionTime } from '../../utils/miscellaneous';
+import { slash } from '@redocly/openapi-core';
+import { pluralize } from '@redocly/openapi-core/lib/utils';
 import { green, yellow } from 'colorette';
-import pluralize = require('pluralize');
+import { exitWithError, printExecutionTime } from '../../utils/miscellaneous';
 import { handlePushStatus } from './push-status';
-import { ReuniteApiClient, getDomain, getApiKeys } from '../api';
+import { ReuniteApi, getDomain, getApiKeys } from '../api';
+import { handleReuniteError } from './utils';
+
+import type { OutputFormat } from '@redocly/openapi-core';
+import type { CommandArgs } from '../../wrapper';
+import type { VerifyConfigOptions } from '../../types';
 
 export type PushOptions = {
   apis?: string[];
@@ -26,22 +31,29 @@ export type PushOptions = {
 
   'default-branch': string;
   domain?: string;
-  config?: string;
   'wait-for-deployment'?: boolean;
   'max-execution-time': number;
+  'continue-on-deploy-failures'?: boolean;
   verbose?: boolean;
-};
+  format?: Extract<OutputFormat, 'stylish'>;
+} & VerifyConfigOptions;
 
 type FileToUpload = { name: string; path: string };
 
-export async function handlePush(argv: PushOptions, config: Config) {
-  const startedAt = performance.now();
+export async function handlePush({
+  argv,
+  config,
+  version,
+}: CommandArgs<PushOptions>): Promise<{ pushId: string } | void> {
+  const startedAt = performance.now(); // for printing execution time
+  const startTime = Date.now(); // for push-status command
+
   const { organization, project: projectId, 'mount-path': mountPath, verbose } = argv;
 
   const orgId = organization || config.organization;
 
   if (!argv.message || !argv.author || !argv.branch) {
-    exitWithError('Error: message, author and branch are required for push to the CMS');
+    exitWithError('Error: message, author and branch are required for push to the Reunite.');
   }
 
   if (!orgId) {
@@ -69,12 +81,13 @@ export async function handlePush(argv: PushOptions, config: Config) {
     const author = parseCommitAuthor(argv.author);
     const apiKey = getApiKeys(domain);
     const filesToUpload = collectFilesToPush(argv.files || argv.apis);
+    const commandName = 'push' as const;
 
     if (!filesToUpload.length) {
-      return printExecutionTime('push', startedAt, `No files to upload`);
+      return printExecutionTime(commandName, startedAt, `No files to upload`);
     }
 
-    const client = new ReuniteApiClient(domain, apiKey);
+    const client = new ReuniteApi({ domain, apiKey, version, command: commandName });
     const projectDefaultBranch = await client.remotes.getDefaultBranch(orgId, projectId);
     const remote = await client.remotes.upsert(orgId, projectId, {
       mountBranchName: projectDefaultBranch,
@@ -111,38 +124,45 @@ export async function handlePush(argv: PushOptions, config: Config) {
     filesToUpload.forEach((f) => {
       process.stderr.write(green(`✓ ${f.name}\n`));
     });
-    process.stdout.write('\n');
 
+    process.stdout.write('\n');
     process.stdout.write(`Push ID: ${id}\n`);
 
     if (waitForDeployment) {
       process.stdout.write('\n');
 
-      await handlePushStatus(
-        {
+      await handlePushStatus({
+        argv: {
           organization: orgId,
           project: projectId,
           pushId: id,
           wait: true,
           domain,
           'max-execution-time': maxExecutionTime,
+          'start-time': startTime,
+          'continue-on-deploy-failures': argv['continue-on-deploy-failures'],
         },
-        config
-      );
+        config,
+        version,
+      });
     }
     verbose &&
       printExecutionTime(
-        'push',
+        commandName,
         startedAt,
         `${pluralize(
           'file',
           filesToUpload.length
         )} uploaded to organization ${orgId}, project ${projectId}. Push ID: ${id}.`
       );
+
+    client.reportSunsetWarnings();
+
+    return {
+      pushId: id,
+    };
   } catch (err) {
-    const message =
-      err instanceof HandledError ? '' : `✗ File upload failed. Reason: ${err.message}`;
-    exitWithError(message);
+    handleReuniteError('✗ File upload failed.', err);
   }
 }
 

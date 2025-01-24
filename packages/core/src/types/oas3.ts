@@ -1,5 +1,9 @@
-import { NodeType, listOf, mapOf } from '.';
+import { listOf, mapOf } from '.';
 import { isMappingRef } from '../ref-utils';
+
+import type { NodeType } from '.';
+import type { Oas3NodeType } from './redocly-yaml';
+
 const responseCodeRegexp = /^[0-9][0-9Xx]{2}$/;
 
 const Root: NodeType = {
@@ -40,7 +44,7 @@ const TagGroup: NodeType = {
   extensionsPrefix: 'x-',
 };
 
-const ExternalDocs: NodeType = {
+export const ExternalDocs: NodeType = {
   properties: {
     description: { type: 'string' },
     url: { type: 'string' },
@@ -342,13 +346,6 @@ const Schema: NodeType = {
         return 'Schema';
       }
     },
-    additionalItems: (value: any) => {
-      if (typeof value === 'boolean') {
-        return { type: 'boolean' };
-      } else {
-        return 'Schema';
-      }
-    },
     additionalProperties: (value: any) => {
       if (typeof value === 'boolean') {
         return { type: 'boolean' };
@@ -372,7 +369,7 @@ const Schema: NodeType = {
   extensionsPrefix: 'x-',
 };
 
-const Xml: NodeType = {
+export const Xml: NodeType = {
   properties: {
     name: { type: 'string' },
     namespace: { type: 'string' },
@@ -388,7 +385,7 @@ const SchemaProperties: NodeType = {
   additionalProperties: 'Schema',
 };
 
-const DiscriminatorMapping: NodeType = {
+export const DiscriminatorMapping: NodeType = {
   properties: {},
   additionalProperties: (value: any) => {
     if (isMappingRef(value)) {
@@ -399,7 +396,7 @@ const DiscriminatorMapping: NodeType = {
   },
 };
 
-const Discriminator: NodeType = {
+export const Discriminator: NodeType = {
   properties: {
     propertyName: { type: 'string' },
     mapping: 'DiscriminatorMapping',
@@ -531,7 +528,7 @@ const XUsePkce: NodeType = {
   },
 };
 
-export const Oas3Types: Record<string, NodeType> = {
+export const Oas3Types: Record<Oas3NodeType, NodeType> = {
   Root,
   Tag,
   TagList: listOf('Tag'),

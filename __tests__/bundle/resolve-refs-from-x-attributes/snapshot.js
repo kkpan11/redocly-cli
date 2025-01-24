@@ -18,7 +18,8 @@ info:
         name: test 2
 components: {}
 
-bundling ./openapi.yaml...
-📦 Created a bundle for ./openapi.yaml at stdout <test>ms.
+Deprecated plugin format detected: plugin
+bundling openapi.yaml...
+📦 Created a bundle for openapi.yaml at stdout <test>ms.
 
 `;

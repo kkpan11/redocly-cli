@@ -1,18 +1,21 @@
 import * as path from 'path';
+import { pathToFileURL } from 'url';
+import { existsSync } from 'fs';
 import { isAbsoluteUrl } from '../ref-utils';
-import { pickDefined } from '../utils';
+import { pickDefined, isNotString, isString, isDefined, keysOf } from '../utils';
 import { resolveDocument, BaseResolver } from '../resolve';
 import { defaultPlugin } from './builtIn';
 import {
   getResolveConfig,
   getUniquePlugins,
+  isCommonJsPlugin,
+  isDeprecatedPluginFormat,
   mergeExtends,
   parsePresetName,
   prefixRules,
   transformConfig,
 } from './utils';
 import { isBrowser } from '../env';
-import { isNotString, isString, isDefined, parseYaml, keysOf } from '../utils';
 import { Config } from './config';
 import { colorize, logger } from '../logger';
 import { asserts, buildAssertCustomFunction } from '../rules/common/assertions/asserts';
@@ -28,11 +31,17 @@ import type {
   ResolvedStyleguideConfig,
   RuleConfig,
   DeprecatedInRawConfig,
+  ImportedPlugin,
 } from './types';
 import type { Assertion, AssertionDefinition, RawAssertion } from '../rules/common/assertions';
 import type { Asserts, AssertionFn } from '../rules/common/assertions/asserts';
 import type { BundleOptions } from '../bundle';
 import type { Document, ResolvedRefMap } from '../resolve';
+
+const DEFAULT_PROJECT_PLUGIN_PATHS = ['@theme/plugin.js', '@theme/plugin.cjs', '@theme/plugin.mjs'];
+
+// Cache instantiated plugins during a single execution
+const pluginsCache: Map<string, Plugin> = new Map();
 
 export async function resolveConfigFileAndRefs({
   configPath,
@@ -63,14 +72,22 @@ export async function resolveConfigFileAndRefs({
   return { document, resolvedRefMap };
 }
 
-export async function resolveConfig(rawConfig: RawConfig, configPath?: string): Promise<Config> {
+export async function resolveConfig({
+  rawConfig,
+  configPath,
+  externalRefResolver,
+}: {
+  rawConfig: RawConfig;
+  configPath?: string;
+  externalRefResolver?: BaseResolver;
+}): Promise<Config> {
   if (rawConfig.styleguide?.extends?.some(isNotString)) {
     throw new Error(
       `Error configuration format not detected in extends value must contain strings`
     );
   }
 
-  const resolver = new BaseResolver(getResolveConfig(rawConfig.resolve));
+  const resolver = externalRefResolver ?? new BaseResolver(getResolveConfig(rawConfig.resolve));
 
   const apis = await resolveApis({
     rawConfig,
@@ -94,35 +111,81 @@ export async function resolveConfig(rawConfig: RawConfig, configPath?: string): 
   );
 }
 
-export function resolvePlugins(
+function getDefaultPluginPath(configDir: string): string | undefined {
+  for (const pluginPath of DEFAULT_PROJECT_PLUGIN_PATHS) {
+    const absolutePluginPath = path.resolve(configDir, pluginPath);
+    if (existsSync(absolutePluginPath)) {
+      return pluginPath;
+    }
+  }
+  return;
+}
+
+export async function resolvePlugins(
   plugins: (string | Plugin)[] | null,
-  configPath: string = ''
-): Plugin[] {
+  configDir: string = ''
+): Promise<Plugin[]> {
   if (!plugins) return [];
 
   // TODO: implement or reuse Resolver approach so it will work in node and browser envs
-  const requireFunc = (plugin: string | Plugin): Plugin | undefined => {
-    if (isBrowser && isString(plugin)) {
-      logger.error(`Cannot load ${plugin}. Plugins aren't supported in browser yet.`);
-
-      return undefined;
-    }
-
+  const requireFunc = async (plugin: string | Plugin): Promise<Plugin | undefined> => {
     if (isString(plugin)) {
       try {
-        const absoltePluginPath = path.resolve(path.dirname(configPath), plugin);
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore
-        return typeof __webpack_require__ === 'function'
-          ? // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        const maybeAbsolutePluginPath = path.resolve(configDir, plugin);
+
+        const absolutePluginPath = existsSync(maybeAbsolutePluginPath)
+          ? maybeAbsolutePluginPath
+          : // For plugins imported from packages specifically
+            require.resolve(plugin, {
+              paths: [
+                // Plugins imported from the node_modules in the project directory
+                configDir,
+                // Plugins imported from the node_modules in the package install directory (for example, npx cache directory)
+                __dirname,
+              ],
+            });
+
+        if (!pluginsCache.has(absolutePluginPath)) {
+          let requiredPlugin: ImportedPlugin | undefined;
+
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-ignore
+          if (typeof __webpack_require__ === 'function') {
+            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
             // @ts-ignore
-            __non_webpack_require__(absoltePluginPath)
-          : require(absoltePluginPath);
-      } catch (e) {
-        if (e instanceof SyntaxError) {
-          throw e;
+            requiredPlugin = __non_webpack_require__(absolutePluginPath);
+          } else {
+            // Workaround for dynamic imports being transpiled to require by Typescript: https://github.com/microsoft/TypeScript/issues/43329#issuecomment-811606238
+            const _importDynamic = new Function('modulePath', 'return import(modulePath)');
+            // you can import both cjs and mjs
+            const mod = await _importDynamic(pathToFileURL(absolutePluginPath).href);
+            requiredPlugin = mod.default || mod;
+          }
+
+          const pluginCreatorOptions = { contentDir: configDir };
+
+          const pluginModule = isDeprecatedPluginFormat(requiredPlugin)
+            ? requiredPlugin
+            : isCommonJsPlugin(requiredPlugin)
+            ? await requiredPlugin(pluginCreatorOptions)
+            : await requiredPlugin?.default?.(pluginCreatorOptions);
+
+          if (pluginModule?.id && isDeprecatedPluginFormat(requiredPlugin)) {
+            logger.info(`Deprecated plugin format detected: ${pluginModule.id}\n`);
+          }
+
+          if (pluginModule) {
+            pluginsCache.set(absolutePluginPath, {
+              ...pluginModule,
+              path: plugin,
+              absolutePath: absolutePluginPath,
+            });
+          }
         }
-        throw new Error(`Failed to load plugin "${plugin}". Please provide a valid path`);
+
+        return pluginsCache.get(absolutePluginPath);
+      } catch (e) {
+        throw new Error(`Failed to load plugin "${plugin}": ${e.message}\n\n${e.stack}`);
       }
     }
 
@@ -131,14 +194,30 @@ export function resolvePlugins(
 
   const seenPluginIds = new Map<string, string>();
 
-  return plugins
-    .map((p) => {
-      if (isString(p) && isAbsoluteUrl(p)) {
-        throw new Error(colorize.red(`We don't support remote plugins yet.`));
+  /**
+   * Include the default plugin automatically if it's not in configuration
+   */
+  const defaultPluginPath = getDefaultPluginPath(configDir);
+  if (defaultPluginPath) {
+    plugins.push(defaultPluginPath);
+  }
+
+  const resolvedPlugins: Set<string> = new Set();
+
+  const instances = await Promise.all(
+    plugins.map(async (p) => {
+      if (isString(p)) {
+        if (isAbsoluteUrl(p)) {
+          throw new Error(colorize.red(`We don't support remote plugins yet.`));
+        }
+        if (resolvedPlugins.has(p)) {
+          return;
+        }
+
+        resolvedPlugins.add(p);
       }
 
-      // TODO: resolve npm packages similar to eslint
-      const pluginModule = requireFunc(p);
+      const pluginModule: Plugin | undefined = await requireFunc(p);
 
       if (!pluginModule) {
         return;
@@ -172,7 +251,9 @@ export function resolvePlugins(
 
       if (pluginModule.rules) {
         if (!pluginModule.rules.oas3 && !pluginModule.rules.oas2 && !pluginModule.rules.async2) {
-          throw new Error(`Plugin rules must have \`oas3\`, \`oas2\` or \`async2\` rules "${p}.`);
+          throw new Error(
+            `Plugin rules must have \`oas3\`, \`oas2\`, \`async2\`, \`async3\` or \`arazzo\` rules "${p}.`
+          );
         }
         plugin.rules = {};
         if (pluginModule.rules.oas3) {
@@ -184,12 +265,20 @@ export function resolvePlugins(
         if (pluginModule.rules.async2) {
           plugin.rules.async2 = prefixRules(pluginModule.rules.async2, id);
         }
+        if (pluginModule.rules.async3) {
+          plugin.rules.async3 = prefixRules(pluginModule.rules.async3, id);
+        }
+        if (pluginModule.rules.arazzo1) {
+          plugin.rules.arazzo1 = prefixRules(pluginModule.rules.arazzo1, id);
+        }
       }
       if (pluginModule.preprocessors) {
         if (
           !pluginModule.preprocessors.oas3 &&
           !pluginModule.preprocessors.oas2 &&
-          !pluginModule.preprocessors.async2
+          !pluginModule.preprocessors.async2 &&
+          !pluginModule.preprocessors.async3 &&
+          !pluginModule.preprocessors.arazzo1
         ) {
           throw new Error(
             `Plugin \`preprocessors\` must have \`oas3\`, \`oas2\` or \`async2\` preprocessors "${p}.`
@@ -205,16 +294,24 @@ export function resolvePlugins(
         if (pluginModule.preprocessors.async2) {
           plugin.preprocessors.async2 = prefixRules(pluginModule.preprocessors.async2, id);
         }
+        if (pluginModule.preprocessors.async3) {
+          plugin.preprocessors.async3 = prefixRules(pluginModule.preprocessors.async3, id);
+        }
+        if (pluginModule.preprocessors.arazzo1) {
+          plugin.preprocessors.arazzo1 = prefixRules(pluginModule.preprocessors.arazzo1, id);
+        }
       }
 
       if (pluginModule.decorators) {
         if (
           !pluginModule.decorators.oas3 &&
           !pluginModule.decorators.oas2 &&
-          !pluginModule.decorators.async2
+          !pluginModule.decorators.async2 &&
+          !pluginModule.decorators.async3 &&
+          !pluginModule.decorators.arazzo1
         ) {
           throw new Error(
-            `Plugin \`decorators\` must have \`oas3\`, \`oas2\` or \`async2\` decorators "${p}.`
+            `Plugin \`decorators\` must have \`oas3\`, \`oas2\`, \`async2\` or \`async3\` decorators "${p}.`
           );
         }
         plugin.decorators = {};
@@ -227,15 +324,26 @@ export function resolvePlugins(
         if (pluginModule.decorators.async2) {
           plugin.decorators.async2 = prefixRules(pluginModule.decorators.async2, id);
         }
+        if (pluginModule.decorators.async3) {
+          plugin.decorators.async3 = prefixRules(pluginModule.decorators.async3, id);
+        }
+        if (pluginModule.decorators.arazzo1) {
+          plugin.decorators.arazzo1 = prefixRules(pluginModule.decorators.arazzo1, id);
+        }
       }
 
       if (pluginModule.assertions) {
         plugin.assertions = pluginModule.assertions;
       }
 
-      return plugin;
+      return {
+        ...pluginModule,
+        ...plugin,
+      };
     })
-    .filter(isDefined);
+  );
+
+  return instances.filter(isDefined);
 }
 
 export async function resolveApis({
@@ -269,25 +377,31 @@ export async function resolveApis({
   return resolvedApis;
 }
 
-async function resolveAndMergeNestedStyleguideConfig(
-  {
-    styleguideConfig,
-    configPath = '',
-    resolver = new BaseResolver(),
-  }: {
-    styleguideConfig?: StyleguideRawConfig;
-    configPath?: string;
-    resolver?: BaseResolver;
-  },
-  parentConfigPaths: string[] = [],
-  extendPaths: string[] = []
-): Promise<ResolvedStyleguideConfig> {
+async function resolveAndMergeNestedStyleguideConfig({
+  styleguideConfig,
+  configPath = '',
+  resolver = new BaseResolver(),
+  parentConfigPaths = [],
+  extendPaths = [],
+}: {
+  styleguideConfig?: StyleguideRawConfig;
+  configPath?: string;
+  resolver?: BaseResolver;
+  parentConfigPaths?: string[];
+  extendPaths?: string[];
+}): Promise<ResolvedStyleguideConfig> {
   if (parentConfigPaths.includes(configPath)) {
     throw new Error(`Circular dependency in config file: "${configPath}"`);
   }
-  const plugins = getUniquePlugins(
-    resolvePlugins([...(styleguideConfig?.plugins || []), defaultPlugin], configPath)
-  );
+  const plugins = isBrowser
+    ? // In browser, we don't support plugins from config file yet
+      [defaultPlugin]
+    : getUniquePlugins(
+        await resolvePlugins(
+          [...(styleguideConfig?.plugins || []), defaultPlugin],
+          path.dirname(configPath)
+        )
+      );
   const pluginPaths = styleguideConfig?.plugins
     ?.filter(isString)
     .map((p) => path.resolve(path.dirname(configPath), p));
@@ -307,15 +421,13 @@ async function resolveAndMergeNestedStyleguideConfig(
         ? new URL(presetItem, configPath).href
         : path.resolve(path.dirname(configPath), presetItem);
       const extendedStyleguideConfig = await loadExtendStyleguideConfig(pathItem, resolver);
-      return await resolveAndMergeNestedStyleguideConfig(
-        {
-          styleguideConfig: extendedStyleguideConfig,
-          configPath: pathItem,
-          resolver: resolver,
-        },
-        [...parentConfigPaths, resolvedConfigPath],
-        extendPaths
-      );
+      return await resolveAndMergeNestedStyleguideConfig({
+        styleguideConfig: extendedStyleguideConfig,
+        configPath: pathItem,
+        resolver,
+        parentConfigPaths: [...parentConfigPaths, resolvedConfigPath],
+        extendPaths,
+      });
     }) || []
   );
 
@@ -339,20 +451,14 @@ async function resolveAndMergeNestedStyleguideConfig(
   };
 }
 
-export async function resolveStyleguideConfig(
-  opts: {
-    styleguideConfig?: StyleguideRawConfig;
-    configPath?: string;
-    resolver?: BaseResolver;
-  },
-  parentConfigPaths: string[] = [],
-  extendPaths: string[] = []
-): Promise<ResolvedStyleguideConfig> {
-  const resolvedStyleguideConfig = await resolveAndMergeNestedStyleguideConfig(
-    opts,
-    parentConfigPaths,
-    extendPaths
-  );
+export async function resolveStyleguideConfig(opts: {
+  styleguideConfig?: StyleguideRawConfig;
+  configPath?: string;
+  resolver?: BaseResolver;
+  parentConfigPaths?: string[];
+  extendPaths?: string[];
+}): Promise<ResolvedStyleguideConfig> {
+  const resolvedStyleguideConfig = await resolveAndMergeNestedStyleguideConfig(opts);
 
   return {
     ...resolvedStyleguideConfig,
@@ -388,10 +494,8 @@ async function loadExtendStyleguideConfig(
   resolver: BaseResolver
 ): Promise<StyleguideRawConfig> {
   try {
-    const fileSource = await resolver.loadExternalRef(filePath);
-    const rawConfig = transformConfig(
-      parseYaml(fileSource.body) as RawConfig & DeprecatedInRawConfig
-    );
+    const { parsed } = (await resolver.resolveDocument(null, filePath)) as Document;
+    const rawConfig = transformConfig(parsed as RawConfig & DeprecatedInRawConfig);
     if (!rawConfig.styleguide) {
       throw new Error(`Styleguide configuration format not detected: "${filePath}"`);
     }
@@ -413,6 +517,9 @@ function getMergedRawStyleguideConfig(
     oas2Rules: { ...rootStyleguideConfig?.oas2Rules, ...apiStyleguideConfig?.oas2Rules },
     oas3_0Rules: { ...rootStyleguideConfig?.oas3_0Rules, ...apiStyleguideConfig?.oas3_0Rules },
     oas3_1Rules: { ...rootStyleguideConfig?.oas3_1Rules, ...apiStyleguideConfig?.oas3_1Rules },
+    async2Rules: { ...rootStyleguideConfig?.async2Rules, ...apiStyleguideConfig?.async2Rules },
+    async3Rules: { ...rootStyleguideConfig?.async3Rules, ...apiStyleguideConfig?.async3Rules },
+    arazzo1Rules: { ...rootStyleguideConfig?.arazzo1Rules, ...apiStyleguideConfig?.arazzo1Rules },
     preprocessors: {
       ...rootStyleguideConfig?.preprocessors,
       ...apiStyleguideConfig?.preprocessors,

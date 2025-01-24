@@ -31,7 +31,7 @@ function ExampleRule() {
 
 Keys of the object are one of the following:
 
-- document-specific node types, such as the [OpenAPI node types](../../openapi-visual-reference/openapi-node-types.md).
+- document-specific node types, such as the [OpenAPI node types](https://redocly.com/docs/openapi-visual-reference/openapi-node-types/).
 - `any` - visitor is called on every node.
 - `ref` - visitor is called on $ref nodes.
 
@@ -67,7 +67,7 @@ The `Schema` **visitor function** is called by Redocly CLI only if the Schema Ob
 
 As the third argument, `enter()` in a **nested visitor object** accepts the `parents` object with corresponding parent nodes as defined in the **visitor object**.
 
-{% admonition type="attention" %}
+{% admonition type="info" %}
 It is executed only for the first level of the Schema Object.
 {% /admonition %}
 

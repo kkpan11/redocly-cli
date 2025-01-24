@@ -1,12 +1,7 @@
-import {
-  formatProblems,
-  getTotals,
-  getMergedConfig,
-  lint,
-  bundle,
-  Config,
-  OutputFormat,
-} from '@redocly/openapi-core';
+import { performance } from 'perf_hooks';
+import { blue, gray, green, yellow } from 'colorette';
+import { writeFileSync } from 'fs';
+import { formatProblems, getTotals, getMergedConfig, bundle } from '@redocly/openapi-core';
 import {
   dumpBundle,
   getExecutionTime,
@@ -15,88 +10,52 @@ import {
   handleError,
   printUnusedWarnings,
   saveBundle,
-  printLintTotals,
-  checkIfRulesetExist,
   sortTopLevelKeysForOas,
+  checkForDeprecatedOptions,
+  formatPath,
 } from '../utils/miscellaneous';
-import type { OutputExtensions, Skips, Totals } from '../types';
-import { performance } from 'perf_hooks';
-import { blue, gray, green, yellow } from 'colorette';
-import { writeFileSync } from 'fs';
-import { checkForDeprecatedOptions } from '../utils/miscellaneous';
+
+import type { OutputExtensions, Skips, Totals, VerifyConfigOptions } from '../types';
+import type { CommandArgs } from '../wrapper';
 
 export type BundleOptions = {
   apis?: string[];
-  'max-problems'?: number;
   extends?: string[];
-  config?: string;
-  format?: OutputFormat;
   output?: string;
-  ext: OutputExtensions;
+  ext?: OutputExtensions;
   dereferenced?: boolean;
   force?: boolean;
-  lint?: boolean;
   metafile?: string;
   'remove-unused-components'?: boolean;
   'keep-url-references'?: boolean;
-} & Skips;
+} & Skips &
+  VerifyConfigOptions;
 
-export async function handleBundle(argv: BundleOptions, config: Config, version: string) {
+export async function handleBundle({
+  argv,
+  config,
+  version,
+  collectSpecData,
+}: CommandArgs<BundleOptions>) {
   const removeUnusedComponents =
     argv['remove-unused-components'] ||
     config.rawConfig?.styleguide?.decorators?.hasOwnProperty('remove-unused-components');
   const apis = await getFallbackApisOrExit(argv.apis, config);
   const totals: Totals = { errors: 0, warnings: 0, ignored: 0 };
-  const maxProblems = argv['max-problems'];
-  const deprecatedOptions: Array<keyof BundleOptions> = [
-    'lint',
-    'format',
-    'skip-rule',
-    'extends',
-    'max-problems',
-  ];
+  const deprecatedOptions: Array<keyof BundleOptions> = [];
 
   checkForDeprecatedOptions(argv, deprecatedOptions);
 
-  for (const { path, alias } of apis) {
+  for (const { path, alias, output } of apis) {
     try {
       const startedAt = performance.now();
       const resolvedConfig = getMergedConfig(config, alias);
       const { styleguide } = resolvedConfig;
 
-      styleguide.skipRules(argv['skip-rule']);
       styleguide.skipPreprocessors(argv['skip-preprocessor']);
       styleguide.skipDecorators(argv['skip-decorator']);
 
-      if (argv.lint) {
-        checkIfRulesetExist(styleguide.rules);
-        if (config.styleguide.recommendedFallback) {
-          process.stderr.write(
-            `No configurations were provided -- using built in ${blue(
-              'recommended'
-            )} configuration by default.\n\n`
-          );
-        }
-        const results = await lint({
-          ref: path,
-          config: resolvedConfig,
-        });
-        const fileLintTotals = getTotals(results);
-
-        totals.errors += fileLintTotals.errors;
-        totals.warnings += fileLintTotals.warnings;
-        totals.ignored += fileLintTotals.ignored;
-
-        formatProblems(results, {
-          format: argv.format || 'codeframe',
-          totals: fileLintTotals,
-          version,
-          maxProblems: maxProblems,
-        });
-        printLintTotals(fileLintTotals, 2);
-      }
-
-      process.stderr.write(gray(`bundling ${path}...\n`));
+      process.stderr.write(gray(`bundling ${formatPath(path)}...\n`));
 
       const {
         bundle: result,
@@ -108,22 +67,29 @@ export async function handleBundle(argv: BundleOptions, config: Config, version:
         dereference: argv.dereferenced,
         removeUnusedComponents,
         keepUrlRefs: argv['keep-url-references'],
+        collectSpecData,
       });
 
       const fileTotals = getTotals(problems);
-      const { outputFile, ext } = getOutputFileName(path, apis.length, argv.output, argv.ext);
+      const { outputFile, ext } = getOutputFileName({
+        entrypoint: path,
+        output,
+        argvOutput: argv.output,
+        ext: argv.ext,
+        entries: argv?.apis?.length || 0,
+      });
 
       if (fileTotals.errors === 0 || argv.force) {
-        if (!argv.output) {
-          const output = dumpBundle(
+        if (!outputFile) {
+          const bundled = dumpBundle(
             sortTopLevelKeysForOas(result.parsed),
             argv.ext || 'yaml',
             argv.dereferenced
           );
-          process.stdout.write(output);
+          process.stdout.write(bundled);
         } else {
-          const output = dumpBundle(sortTopLevelKeysForOas(result.parsed), ext, argv.dereferenced);
-          saveBundle(outputFile, output);
+          const bundled = dumpBundle(sortTopLevelKeysForOas(result.parsed), ext, argv.dereferenced);
+          saveBundle(outputFile, bundled);
         }
       }
 
@@ -132,8 +98,7 @@ export async function handleBundle(argv: BundleOptions, config: Config, version:
       totals.ignored += fileTotals.ignored;
 
       formatProblems(problems, {
-        format: argv.format || 'codeframe',
-        maxProblems: maxProblems,
+        format: 'codeframe',
         totals: fileTotals,
         version,
       });
@@ -153,20 +118,22 @@ export async function handleBundle(argv: BundleOptions, config: Config, version:
       if (fileTotals.errors > 0) {
         if (argv.force) {
           process.stderr.write(
-            `❓ Created a bundle for ${blue(path)} at ${blue(outputFile)} with errors ${green(
-              elapsed
-            )}.\n${yellow('Errors ignored because of --force')}.\n`
+            `❓ Created a bundle for ${blue(formatPath(path))} at ${blue(
+              outputFile || 'stdout'
+            )} with errors ${green(elapsed)}.\n${yellow('Errors ignored because of --force')}.\n`
           );
         } else {
           process.stderr.write(
             `❌ Errors encountered while bundling ${blue(
-              path
+              formatPath(path)
             )}: bundle not created (use --force to ignore errors).\n`
           );
         }
       } else {
         process.stderr.write(
-          `📦 Created a bundle for ${blue(path)} at ${blue(outputFile)} ${green(elapsed)}.\n`
+          `📦 Created a bundle for ${blue(formatPath(path))} at ${blue(
+            outputFile || 'stdout'
+          )} ${green(elapsed)}.\n`
         );
       }
 

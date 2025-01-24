@@ -2,7 +2,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { existsSync, writeFileSync, readFileSync, statSync } from 'fs';
 import { compare } from 'semver';
-import fetch from './fetch-with-timeout';
+import fetch, { DEFAULT_FETCH_TIMEOUT } from './fetch-with-timeout';
 import { cyan, green, yellow } from 'colorette';
 import { cleanColors } from './miscellaneous';
 
@@ -13,7 +13,10 @@ const SPACE_TO_BORDER = 4;
 
 const INTERVAL_TO_CHECK = 1000 * 60 * 60 * 12;
 const SHOULD_NOT_NOTIFY =
-  process.env.NODE_ENV === 'test' || process.env.CI || !!process.env.LAMBDA_TASK_ROOT;
+  process.env.NODE_ENV === 'test' ||
+  process.env.CI ||
+  !!process.env.LAMBDA_TASK_ROOT ||
+  process.env.REDOCLY_SUPPRESS_UPDATE_NOTICE === 'true';
 
 export const notifyUpdateCliVersion = () => {
   if (SHOULD_NOT_NOTIFY) {
@@ -34,10 +37,16 @@ const isNewVersionAvailable = (current: string, latest: string) => compare(curre
 
 const getLatestVersion = async (packageName: string): Promise<string | undefined> => {
   const latestUrl = `http://registry.npmjs.org/${packageName}/latest`;
-  const response = await fetch(latestUrl);
-  if (!response) return;
-  const info = await response.json();
-  return info.version;
+
+  try {
+    const response = await fetch(latestUrl, { timeout: DEFAULT_FETCH_TIMEOUT });
+    const info = await response.json();
+
+    return info.version;
+  } catch {
+    // Do nothing
+    return;
+  }
 };
 
 export const cacheLatestVersion = () => {

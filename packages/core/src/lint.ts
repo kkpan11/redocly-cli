@@ -1,26 +1,39 @@
+import { rootRedoclyConfigSchema } from '@redocly/config';
 import { BaseResolver, resolveDocument, makeDocumentFromString } from './resolve';
 import { normalizeVisitors } from './visitors';
 import { walkDocument } from './walk';
-import { StyleguideConfig, Config, initRules, defaultPlugin, resolvePlugins } from './config';
+import { initRules } from './config';
 import { normalizeTypes } from './types';
 import { releaseAjvInstance } from './rules/ajv';
 import { SpecVersion, getMajorSpecVersion, detectSpec, getTypes } from './oas-types';
-import { ConfigTypes } from './types/redocly-yaml';
-import { Spec } from './rules/common/spec';
+import { createConfigTypes } from './types/redocly-yaml';
+import { Struct } from './rules/common/struct';
 import { NoUnresolvedRefs } from './rules/no-unresolved-refs';
 
+import type { StyleguideConfig, Config } from './config';
 import type { Document, ResolvedRefMap } from './resolve';
 import type { ProblemSeverity, WalkContext } from './walk';
 import type { NodeType } from './types';
-import type { NestedVisitObject, Oas3Visitor, RuleInstanceConfig } from './visitors';
+import type {
+  Arazzo1Visitor,
+  Async2Visitor,
+  Async3Visitor,
+  NestedVisitObject,
+  Oas2Visitor,
+  Oas3Visitor,
+  RuleInstanceConfig,
+} from './visitors';
+import type { CollectFn } from './utils';
 
 export async function lint(opts: {
   ref: string;
   config: Config;
   externalRefResolver?: BaseResolver;
+  collectSpecData?: CollectFn;
 }) {
   const { ref, externalRefResolver = new BaseResolver(opts.config.resolve) } = opts;
   const document = (await externalRefResolver.resolveDocument(null, ref, true)) as Document;
+  opts.collectSpecData?.(document.parsed);
 
   return lintDocument({
     document,
@@ -58,7 +71,7 @@ export async function lintDocument(opts: {
   const { document, customTypes, externalRefResolver, config } = opts;
   const specVersion = detectSpec(document.parsed);
   const specMajorVersion = getMajorSpecVersion(specVersion);
-  const rules = config.getRulesForOasVersion(specMajorVersion);
+  const rules = config.getRulesForSpecVersion(specMajorVersion);
   const types = normalizeTypes(
     config.extendTypes(customTypes ?? getTypes(specVersion), specVersion),
     config
@@ -109,31 +122,44 @@ export async function lintDocument(opts: {
 
 export async function lintConfig(opts: {
   document: Document;
+  config: Config;
   resolvedRefMap?: ResolvedRefMap;
   severity?: ProblemSeverity;
   externalRefResolver?: BaseResolver;
+  externalConfigTypes?: Record<string, NodeType>;
 }) {
-  const { document, severity, externalRefResolver = new BaseResolver() } = opts;
+  const { document, severity, externalRefResolver = new BaseResolver(), config } = opts;
 
   const ctx: WalkContext = {
     problems: [],
     oasVersion: SpecVersion.OAS3_0,
     visitorsData: {},
   };
-  const plugins = resolvePlugins([defaultPlugin]);
-  const config = new StyleguideConfig({
-    plugins,
-    rules: { spec: 'error' },
-  });
 
-  const types = normalizeTypes(ConfigTypes, config);
+  const types = normalizeTypes(
+    opts.externalConfigTypes || createConfigTypes(rootRedoclyConfigSchema, config),
+    { doNotResolveExamples: config.styleguide.doNotResolveExamples }
+  );
+
   const rules: (RuleInstanceConfig & {
-    visitor: NestedVisitObject<unknown, Oas3Visitor | Oas3Visitor[]>;
+    visitor: NestedVisitObject<
+      unknown,
+      | Oas3Visitor
+      | Oas3Visitor[]
+      | Oas2Visitor
+      | Oas2Visitor[]
+      | Async2Visitor
+      | Async2Visitor[]
+      | Async3Visitor
+      | Async3Visitor[]
+      | Arazzo1Visitor
+      | Arazzo1Visitor[]
+    >;
   })[] = [
     {
       severity: severity || 'error',
       ruleId: 'configuration spec',
-      visitor: Spec({ severity: 'error' }),
+      visitor: Struct({ severity: 'error' }),
     },
     {
       severity: severity || 'error',

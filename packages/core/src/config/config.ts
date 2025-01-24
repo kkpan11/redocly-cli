@@ -1,17 +1,20 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { parseYaml, stringifyYaml } from '../js-yaml';
-import { slash, doesYamlFileExist } from '../utils';
-import { NormalizedProblem } from '../walk';
-import {
-  SpecVersion,
-  SpecMajorVersion,
+import { slash, doesYamlFileExist, isPlainObject, showWarningForDeprecatedField } from '../utils';
+import { SpecVersion, SpecMajorVersion } from '../oas-types';
+import { isBrowser } from '../env';
+import { getResolveConfig } from './utils';
+import { isAbsoluteUrl } from '../ref-utils';
+
+import type { NormalizedProblem } from '../walk';
+import type {
   Oas2RuleSet,
   Oas3RuleSet,
   Async2RuleSet,
+  Async3RuleSet,
+  Arazzo1RuleSet,
 } from '../oas-types';
-import { isBrowser, env } from '../env';
-
 import type { NodeType } from '../types';
 import type {
   DecoratorConfig,
@@ -27,32 +30,11 @@ import type {
   Telemetry,
   ThemeRawConfig,
 } from './types';
-import { getResolveConfig } from './utils';
-import { isAbsoluteUrl } from '../ref-utils';
 
 export const IGNORE_FILE = '.redocly.lint-ignore.yaml';
 const IGNORE_BANNER =
   `# This file instructs Redocly's linter to ignore the rules contained for specific parts of your API.\n` +
-  `# See https://redoc.ly/docs/cli/ for more information.\n`;
-
-export const DEFAULT_REGION = 'us';
-
-function getDomains() {
-  const domains: { [region in Region]: string } = {
-    us: 'redocly.com',
-    eu: 'eu.redocly.com',
-  };
-
-  // FIXME: temporary fix for our lab environments
-  const domain = env.REDOCLY_DOMAIN;
-  if (domain?.endsWith('.redocly.host')) {
-    domains[domain.split('.')[0] as Region] = domain;
-  }
-  if (domain === 'redoc.online') {
-    domains[domain as Region] = domain;
-  }
-  return domains;
-}
+  `# See https://redocly.com/docs/cli/ for more information.\n`;
 
 function getIgnoreFilePath(configFile?: string): string | undefined {
   if (configFile) {
@@ -63,9 +45,6 @@ function getIgnoreFilePath(configFile?: string): string | undefined {
     return isBrowser ? undefined : path.join(process.cwd(), IGNORE_FILE);
   }
 }
-
-export const DOMAINS = getDomains();
-export const AVAILABLE_REGIONS = Object.keys(DOMAINS) as Region[];
 
 export class StyleguideConfig {
   plugins: Plugin[];
@@ -88,11 +67,25 @@ export class StyleguideConfig {
     this.doNotResolveExamples = !!rawConfig.doNotResolveExamples;
     this.recommendedFallback = rawConfig.recommendedFallback || false;
 
+    const ruleGroups: (keyof ResolvedStyleguideConfig)[] = [
+      'rules',
+      'oas2Rules',
+      'oas3_0Rules',
+      'oas3_1Rules',
+      'async2Rules',
+      'async3Rules',
+      'arazzo1Rules',
+    ];
+
+    replaceSpecWithStruct(ruleGroups, rawConfig);
+
     this.rules = {
       [SpecVersion.OAS2]: { ...rawConfig.rules, ...rawConfig.oas2Rules },
       [SpecVersion.OAS3_0]: { ...rawConfig.rules, ...rawConfig.oas3_0Rules },
       [SpecVersion.OAS3_1]: { ...rawConfig.rules, ...rawConfig.oas3_1Rules },
       [SpecVersion.Async2]: { ...rawConfig.rules, ...rawConfig.async2Rules },
+      [SpecVersion.Async3]: { ...rawConfig.rules, ...rawConfig.async3Rules },
+      [SpecVersion.Arazzo1]: { ...rawConfig.rules, ...rawConfig.arazzo1Rules },
     };
 
     this.preprocessors = {
@@ -100,6 +93,8 @@ export class StyleguideConfig {
       [SpecVersion.OAS3_0]: { ...rawConfig.preprocessors, ...rawConfig.oas3_0Preprocessors },
       [SpecVersion.OAS3_1]: { ...rawConfig.preprocessors, ...rawConfig.oas3_1Preprocessors },
       [SpecVersion.Async2]: { ...rawConfig.preprocessors, ...rawConfig.async2Preprocessors },
+      [SpecVersion.Async3]: { ...rawConfig.preprocessors, ...rawConfig.async3Preprocessors },
+      [SpecVersion.Arazzo1]: { ...rawConfig.arazzo1Preprocessors },
     };
 
     this.decorators = {
@@ -107,6 +102,8 @@ export class StyleguideConfig {
       [SpecVersion.OAS3_0]: { ...rawConfig.decorators, ...rawConfig.oas3_0Decorators },
       [SpecVersion.OAS3_1]: { ...rawConfig.decorators, ...rawConfig.oas3_1Decorators },
       [SpecVersion.Async2]: { ...rawConfig.decorators, ...rawConfig.async2Decorators },
+      [SpecVersion.Async3]: { ...rawConfig.decorators, ...rawConfig.async3Decorators },
+      [SpecVersion.Arazzo1]: { ...rawConfig.arazzo1Decorators },
     };
 
     this.extendPaths = rawConfig.extendPaths || [];
@@ -122,6 +119,8 @@ export class StyleguideConfig {
         string,
         Record<string, Set<string>>
       >) || {};
+
+    replaceSpecWithStruct(Object.keys(this.ignore), this.ignore);
 
     // resolve ignore paths
     for (const fileName of Object.keys(this.ignore)) {
@@ -200,6 +199,14 @@ export class StyleguideConfig {
             if (!plugin.typeExtension.async2) continue;
             extendedTypes = plugin.typeExtension.async2(extendedTypes, version);
             break;
+          case SpecVersion.Async3:
+            if (!plugin.typeExtension.async3) continue;
+            extendedTypes = plugin.typeExtension.async3(extendedTypes, version);
+            break;
+          case SpecVersion.Arazzo1:
+            if (!plugin.typeExtension.arazzo1) continue;
+            extendedTypes = plugin.typeExtension.arazzo1(extendedTypes, version);
+            break;
           default:
             throw new Error('Not implemented');
         }
@@ -272,33 +279,55 @@ export class StyleguideConfig {
     };
   }
 
-  getRulesForOasVersion(version: SpecMajorVersion) {
+  getRulesForSpecVersion(version: SpecMajorVersion) {
     switch (version) {
       case SpecMajorVersion.OAS3:
         // eslint-disable-next-line no-case-declarations
-        const oas3Rules: Oas3RuleSet[] = []; // default ruleset
+        const oas3Rules: Oas3RuleSet[] = [];
         this.plugins.forEach((p) => p.preprocessors?.oas3 && oas3Rules.push(p.preprocessors.oas3));
         this.plugins.forEach((p) => p.rules?.oas3 && oas3Rules.push(p.rules.oas3));
         this.plugins.forEach((p) => p.decorators?.oas3 && oas3Rules.push(p.decorators.oas3));
         return oas3Rules;
       case SpecMajorVersion.OAS2:
         // eslint-disable-next-line no-case-declarations
-        const oas2Rules: Oas2RuleSet[] = []; // default ruleset
+        const oas2Rules: Oas2RuleSet[] = [];
         this.plugins.forEach((p) => p.preprocessors?.oas2 && oas2Rules.push(p.preprocessors.oas2));
         this.plugins.forEach((p) => p.rules?.oas2 && oas2Rules.push(p.rules.oas2));
         this.plugins.forEach((p) => p.decorators?.oas2 && oas2Rules.push(p.decorators.oas2));
         return oas2Rules;
       case SpecMajorVersion.Async2:
         // eslint-disable-next-line no-case-declarations
-        const asyncApiRules: Async2RuleSet[] = []; // default ruleset
+        const asyncApi2Rules: Async2RuleSet[] = [];
         this.plugins.forEach(
-          (p) => p.preprocessors?.async2 && asyncApiRules.push(p.preprocessors.async2)
+          (p) => p.preprocessors?.async2 && asyncApi2Rules.push(p.preprocessors.async2)
         );
-        this.plugins.forEach((p) => p.rules?.async2 && asyncApiRules.push(p.rules.async2));
+        this.plugins.forEach((p) => p.rules?.async2 && asyncApi2Rules.push(p.rules.async2));
         this.plugins.forEach(
-          (p) => p.decorators?.async2 && asyncApiRules.push(p.decorators.async2)
+          (p) => p.decorators?.async2 && asyncApi2Rules.push(p.decorators.async2)
         );
-        return asyncApiRules;
+        return asyncApi2Rules;
+      case SpecMajorVersion.Async3:
+        // eslint-disable-next-line no-case-declarations
+        const asyncApi3Rules: Async3RuleSet[] = [];
+        this.plugins.forEach(
+          (p) => p.preprocessors?.async3 && asyncApi3Rules.push(p.preprocessors.async3)
+        );
+        this.plugins.forEach((p) => p.rules?.async3 && asyncApi3Rules.push(p.rules.async3));
+        this.plugins.forEach(
+          (p) => p.decorators?.async3 && asyncApi3Rules.push(p.decorators.async3)
+        );
+        return asyncApi3Rules;
+      case SpecMajorVersion.Arazzo1:
+        // eslint-disable-next-line no-case-declarations
+        const arazzo1Rules: Arazzo1RuleSet[] = [];
+        this.plugins.forEach(
+          (p) => p.preprocessors?.arazzo1 && arazzo1Rules.push(p.preprocessors.arazzo1)
+        );
+        this.plugins.forEach((p) => p.rules?.arazzo1 && arazzo1Rules.push(p.rules.arazzo1));
+        this.plugins.forEach(
+          (p) => p.decorators?.arazzo1 && arazzo1Rules.push(p.decorators.arazzo1)
+        );
+        return arazzo1Rules;
     }
   }
 
@@ -307,6 +336,13 @@ export class StyleguideConfig {
       for (const version of Object.values(SpecVersion)) {
         if (this.rules[version][ruleId]) {
           this.rules[version][ruleId] = 'off';
+        } else if (Array.isArray(this.rules[version].assertions)) {
+          // skip assertions
+          for (const configurableRule of this.rules[version].assertions) {
+            if (configurableRule.assertionId === ruleId) {
+              configurableRule.severity = 'off';
+            }
+          }
         }
       }
     }
@@ -329,6 +365,17 @@ export class StyleguideConfig {
           this.decorators[version][decoratorId] = 'off';
         }
       }
+    }
+  }
+}
+
+// To support backwards compatibility with the old `spec` key we rename it to `struct`.
+function replaceSpecWithStruct(ruleGroups: string[], config: Record<string, unknown>) {
+  for (const ruleGroup of ruleGroups) {
+    if (config[ruleGroup] && isPlainObject(config[ruleGroup]) && 'spec' in config[ruleGroup]) {
+      showWarningForDeprecatedField('spec', 'struct');
+      config[ruleGroup].struct = config[ruleGroup].spec;
+      delete config[ruleGroup].spec;
     }
   }
 }

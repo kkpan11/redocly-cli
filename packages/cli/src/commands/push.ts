@@ -6,28 +6,31 @@ import { yellow, green, blue, red } from 'colorette';
 import { createHash } from 'crypto';
 import {
   bundle,
-  Config,
   RedoclyClient,
   IGNORE_FILE,
-  BundleOutputFormat,
   getTotals,
   slash,
-  Region,
   getMergedConfig,
+  getProxyAgent,
 } from '@redocly/openapi-core';
+import { pluralize } from '@redocly/openapi-core/lib/utils';
 import {
   exitWithError,
   printExecutionTime,
   getFallbackApisOrExit,
-  pluralize,
   dumpBundle,
 } from '../utils/miscellaneous';
 import { promptClientToken } from './login';
 import { handlePush as handleCMSPush } from '../cms/commands/push';
 
+import type { Config, BundleOutputFormat, Region } from '@redocly/openapi-core';
+import type { CommandArgs } from '../wrapper';
+import type { VerifyConfigOptions } from '../types';
+
 const DEFAULT_VERSION = 'latest';
 
 export const DESTINATION_REGEX =
+  // eslint-disable-next-line no-useless-escape
   /^(@(?<organizationId>[\w\-\s]+)\/)?(?<name>[^@]*)@(?<version>[\w\.\-]+)$/;
 
 export type PushOptions = {
@@ -42,8 +45,7 @@ export type PushOptions = {
   public?: boolean;
   files?: string[];
   organization?: string;
-  config?: string;
-};
+} & VerifyConfigOptions;
 
 export function commonPushHandler({
   project,
@@ -58,12 +60,16 @@ export function commonPushHandler({
   return transformPush(handlePush);
 }
 
-export async function handlePush(argv: PushOptions, config: Config): Promise<void> {
+export async function handlePush({ argv, config }: CommandArgs<PushOptions>): Promise<void> {
   const client = new RedoclyClient(config.region);
   const isAuthorized = await client.isAuthorizedWithRedoclyByRegion();
   if (!isAuthorized) {
-    const clientToken = await promptClientToken(client.domain);
-    await client.login(clientToken);
+    try {
+      const clientToken = await promptClientToken(client.domain);
+      await client.login(clientToken);
+    } catch (e) {
+      exitWithError(e);
+    }
   }
 
   const startedAt = performance.now();
@@ -76,7 +82,7 @@ export async function handlePush(argv: PushOptions, config: Config): Promise<voi
     exitWithError(
       `Destination argument value is not valid, please use the right format: ${yellow(
         '<api-name@api-version>'
-      )}`
+      )}.`
     );
   }
 
@@ -176,7 +182,7 @@ export async function handlePush(argv: PushOptions, config: Config): Promise<voi
         const fileCounter = `(${++uploaded}/${filesToUpload.files.length})`;
 
         if (!uploadResponse.ok) {
-          exitWithError(`✗ ${fileCounter}\nFile upload failed\n`);
+          exitWithError(`✗ ${fileCounter}\nFile upload failed.`);
         }
 
         process.stdout.write(green(`✓ ${fileCounter}\n`));
@@ -198,7 +204,7 @@ export async function handlePush(argv: PushOptions, config: Config): Promise<voi
       });
     } catch (error) {
       if (error.message === 'ORGANIZATION_NOT_FOUND') {
-        exitWithError(`Organization ${blue(organizationId)} not found`);
+        exitWithError(`Organization ${blue(organizationId)} not found.`);
       }
 
       if (error.message === 'API_VERSION_NOT_FOUND') {
@@ -207,7 +213,7 @@ export async function handlePush(argv: PushOptions, config: Config): Promise<voi
             `${name}@${version}`
           )} does not exist in organization ${blue(organizationId)}!\n${yellow(
             'Suggestion:'
-          )} please use ${blue('-u')} or ${blue('--upsert')} to create definition.\n\n`
+          )} please use ${blue('-u')} or ${blue('--upsert')} to create definition.`
         );
       }
 
@@ -215,7 +221,7 @@ export async function handlePush(argv: PushOptions, config: Config): Promise<voi
     }
 
     process.stdout.write(
-      `Definition: ${blue(api!)} is successfully pushed to Redocly API Registry \n`
+      `Definition: ${blue(api!)} is successfully pushed to Redocly API Registry.\n`
     );
   }
   printExecutionTime('push', startedAt, api || `apis in organization ${organizationId}`);
@@ -254,7 +260,7 @@ async function collectFilesToUpload(api: string, config: Config) {
       `Created a bundle for ${blue(api)} ${fileTotals.warnings > 0 ? 'with warnings' : ''}\n`
     );
   } else {
-    exitWithError(`Failed to create a bundle for ${blue(api)}\n`);
+    exitWithError(`Failed to create a bundle for ${blue(api)}.`);
   }
 
   const fileExt = path.extname(apiPath).split('.').pop();
@@ -361,16 +367,11 @@ type BarePushArgs = Omit<PushOptions, 'destination' | 'branchName'> & {
 
 export const transformPush =
   (callback: typeof handlePush) =>
-  (
-    {
-      apis,
-      branch,
-      'batch-id': batchId,
-      'job-id': jobId,
-      ...rest
-    }: BarePushArgs & { 'batch-id'?: string },
-    config: Config
-  ) => {
+  ({
+    argv: { apis, branch, 'batch-id': batchId, 'job-id': jobId, ...rest },
+    config,
+    version,
+  }: CommandArgs<BarePushArgs & { 'batch-id'?: string }>) => {
     const [maybeApiOrDestination, maybeDestination, maybeBranchName] = apis || [];
 
     if (batchId) {
@@ -409,16 +410,17 @@ export const transformPush =
       apiFile = maybeApiOrDestination;
     }
 
-    return callback(
-      {
+    return callback({
+      argv: {
         ...rest,
         destination: rest.destination ?? destination,
         api: apiFile,
         branchName: branch ?? maybeBranchName,
         'job-id': jobId || batchId,
       },
-      config
-    );
+      config,
+      version,
+    });
   };
 
 export function getApiRoot({
@@ -439,6 +441,7 @@ function uploadFileToS3(url: string, filePathOrBuffer: string | Buffer) {
     typeof filePathOrBuffer === 'string'
       ? fs.statSync(filePathOrBuffer).size
       : filePathOrBuffer.byteLength;
+
   const readStream =
     typeof filePathOrBuffer === 'string' ? fs.createReadStream(filePathOrBuffer) : filePathOrBuffer;
 
@@ -448,5 +451,6 @@ function uploadFileToS3(url: string, filePathOrBuffer: string | Buffer) {
       'Content-Length': fileSizeInBytes.toString(),
     },
     body: readStream,
+    agent: getProxyAgent(),
   });
 }

@@ -1,9 +1,10 @@
 import { Location, isRef } from './ref-utils';
 import { pushStack, popStack } from './utils';
-import { ResolveError, YamlParseError, Source, makeRefId } from './resolve';
-import { SpecVersion } from './oas-types';
+import { YamlParseError, makeRefId } from './resolve';
 import { isNamedType, SpecExtension } from './types';
 
+import type { SpecVersion } from './oas-types';
+import type { ResolveError, Source, ResolvedRefMap, Document } from './resolve';
 import type { Referenced } from './typings/openapi';
 import type {
   VisitorLevelContext,
@@ -14,7 +15,6 @@ import type {
   NormalizeVisitor,
   VisitorNode,
 } from './visitors';
-import type { ResolvedRefMap, Document } from './resolve';
 import type { NormalizedNodeType } from './types';
 import type { RuleSeverity } from './config';
 
@@ -165,9 +165,9 @@ export function walkDocument<T extends BaseVisitor>(opts: {
 
     if (isRef(node)) {
       const refEnterVisitors = normalizedVisitors.ref.enter;
-      for (const { visit: visitor, ruleId, severity, context } of refEnterVisitors) {
+      for (const { visit: visitor, ruleId, severity, message, context } of refEnterVisitors) {
         enteredContexts.add(context);
-        const report = reportFn.bind(undefined, ruleId, severity);
+        const report = reportFn.bind(undefined, ruleId, severity, message);
         visitor(
           node,
           {
@@ -203,7 +203,7 @@ export function walkDocument<T extends BaseVisitor>(opts: {
 
       const activatedContexts: Array<VisitorSkippedLevelContext | VisitorLevelContext> = [];
 
-      for (const { context, visit, skip, ruleId, severity } of currentEnterVisitors) {
+      for (const { context, visit, skip, ruleId, severity, message } of currentEnterVisitors) {
         if (ignoredNodes.has(`${currentLocation.absolutePointer}${currentLocation.pointer}`)) break;
 
         if (context.isSkippedLevel) {
@@ -258,7 +258,7 @@ export function walkDocument<T extends BaseVisitor>(opts: {
             if (!activatedOn.skipped) {
               visitedBySome = true;
               enteredContexts.add(context);
-              visitWithContext(visit, resolvedNode, node, context, ruleId, severity);
+              visitWithContext(visit, resolvedNode, node, context, ruleId, severity, message);
             }
           }
         }
@@ -271,8 +271,14 @@ export function walkDocument<T extends BaseVisitor>(opts: {
         if (Array.isArray(resolvedNode)) {
           const itemsType = type.items;
           if (itemsType !== undefined) {
+            const isTypeAFunction = typeof itemsType === 'function';
             for (let i = 0; i < resolvedNode.length; i++) {
-              walkNode(resolvedNode[i], itemsType, resolvedLocation.child([i]), resolvedNode, i);
+              const itemType = isTypeAFunction
+                ? itemsType(resolvedNode[i], resolvedLocation.child([i]).absolutePointer)
+                : itemsType;
+              if (isNamedType(itemType)) {
+                walkNode(resolvedNode[i], itemType, resolvedLocation.child([i]), resolvedNode, i);
+              }
             }
           }
         } else if (typeof resolvedNode === 'object' && resolvedNode !== null) {
@@ -354,9 +360,9 @@ export function walkDocument<T extends BaseVisitor>(opts: {
         }
       }
 
-      for (const { context, visit, ruleId, severity } of currentLeaveVisitors) {
+      for (const { context, visit, ruleId, severity, message } of currentLeaveVisitors) {
         if (!context.isSkippedLevel && enteredContexts.has(context)) {
-          visitWithContext(visit, resolvedNode, node, context, ruleId, severity);
+          visitWithContext(visit, resolvedNode, node, context, ruleId, severity, message);
         }
       }
     }
@@ -365,9 +371,9 @@ export function walkDocument<T extends BaseVisitor>(opts: {
 
     if (isRef(node)) {
       const refLeaveVisitors = normalizedVisitors.ref.leave;
-      for (const { visit: visitor, ruleId, severity, context } of refLeaveVisitors) {
+      for (const { visit: visitor, ruleId, severity, context, message } of refLeaveVisitors) {
         if (enteredContexts.has(context)) {
-          const report = reportFn.bind(undefined, ruleId, severity);
+          const report = reportFn.bind(undefined, ruleId, severity, message);
           visitor(
             node,
             {
@@ -396,9 +402,10 @@ export function walkDocument<T extends BaseVisitor>(opts: {
       node: unknown,
       context: VisitorLevelContext,
       ruleId: string,
-      severity: ProblemSeverity
+      severity: ProblemSeverity,
+      customMessage: string | undefined
     ) {
-      const report = reportFn.bind(undefined, ruleId, severity);
+      const report = reportFn.bind(undefined, ruleId, severity, customMessage);
       visit(
         resolvedNode,
         {
@@ -422,7 +429,12 @@ export function walkDocument<T extends BaseVisitor>(opts: {
       );
     }
 
-    function reportFn(ruleId: string, severity: ProblemSeverity, opts: Problem) {
+    function reportFn(
+      ruleId: string,
+      severity: ProblemSeverity,
+      customMessage: string,
+      opts: Problem
+    ) {
       const normalizedLocation = opts.location
         ? Array.isArray(opts.location)
           ? opts.location
@@ -439,6 +451,9 @@ export function walkDocument<T extends BaseVisitor>(opts: {
           ruleId: opts.ruleId || ruleId,
           severity: ruleSeverity,
           ...opts,
+          message: customMessage
+            ? customMessage.replace('{{message}}', opts.message)
+            : opts.message,
           suggest: opts.suggest || [],
           location,
         });

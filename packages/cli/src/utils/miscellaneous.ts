@@ -1,4 +1,3 @@
-import fetch from './fetch-with-timeout';
 import { basename, dirname, extname, join, resolve, relative, isAbsolute } from 'path';
 import { blue, gray, green, red, yellow } from 'colorette';
 import { performance } from 'perf_hooks';
@@ -7,45 +6,49 @@ import * as fs from 'fs';
 import * as readline from 'readline';
 import { Writable } from 'stream';
 import { execSync } from 'child_process';
+import { promisify } from 'util';
 import {
-  BundleOutputFormat,
-  StyleguideConfig,
   ResolveError,
   YamlParseError,
-  ResolvedApi,
   parseYaml,
   stringifyYaml,
   isAbsoluteUrl,
   loadConfig,
+  RedoclyClient,
+} from '@redocly/openapi-core';
+import {
+  isEmptyObject,
+  isNotEmptyArray,
+  isNotEmptyObject,
+  isPlainObject,
+  pluralize,
+} from '@redocly/openapi-core/lib/utils';
+import { ConfigValidationError } from '@redocly/openapi-core/lib/config';
+import { deprecatedRefDocsSchema } from '@redocly/config/lib/reference-docs-config-schema';
+import { outputExtensions } from '../types';
+import { version } from './update-version-notifier';
+import { DESTINATION_REGEX } from '../commands/push';
+import fetch, { DEFAULT_FETCH_TIMEOUT } from './fetch-with-timeout';
+
+import type { Arguments } from 'yargs';
+import type {
+  BundleOutputFormat,
+  StyleguideConfig,
+  ResolvedApi,
   Region,
   Config,
   Oas3Definition,
   Oas2Definition,
-  RedoclyClient,
 } from '@redocly/openapi-core';
-import {
-  Totals,
-  outputExtensions,
-  Entrypoint,
-  ConfigApis,
-  CommandOptions,
-  OutputExtensions,
-} from '../types';
-import { isEmptyObject } from '@redocly/openapi-core/lib/utils';
-import { Arguments } from 'yargs';
-import { version } from './update-version-notifier';
-import { DESTINATION_REGEX } from '../commands/push';
-import { ConfigValidationError } from '@redocly/openapi-core/lib/config';
-
 import type { RawConfigProcessor } from '@redocly/openapi-core/lib/config';
+import type { Totals, Entrypoint, ConfigApis, CommandOptions, OutputExtensions } from '../types';
 
 export async function getFallbackApisOrExit(
   argsApis: string[] | undefined,
   config: ConfigApis
 ): Promise<Entrypoint[]> {
   const { apis } = config;
-  const shouldFallbackToAllDefinitions =
-    !isNotEmptyArray(argsApis) && apis && Object.keys(apis).length > 0;
+  const shouldFallbackToAllDefinitions = !isNotEmptyArray(argsApis) && isNotEmptyObject(apis);
   const res = shouldFallbackToAllDefinitions
     ? fallbackToAllDefinitions(apis, config)
     : await expandGlobsInEntrypoints(argsApis!, config);
@@ -54,7 +57,7 @@ export async function getFallbackApisOrExit(
   if (isNotEmptyArray(filteredInvalidEntrypoints)) {
     for (const { path } of filteredInvalidEntrypoints) {
       process.stderr.write(
-        yellow(`\n${relative(process.cwd(), path)} ${red(`does not exist or is invalid.\n\n`)}`)
+        yellow(`\n${formatPath(path)} ${red(`does not exist or is invalid.\n\n`)}`)
       );
     }
     exitWithError('Please provide a valid path.');
@@ -64,10 +67,6 @@ export async function getFallbackApisOrExit(
 
 function getConfigDirectory(config: ConfigApis) {
   return config.configFile ? dirname(config.configFile) : process.cwd();
-}
-
-function isNotEmptyArray<T>(args?: T[]): boolean {
-  return Array.isArray(args) && !!args.length;
 }
 
 function isApiPathValid(apiPath: string): string | void {
@@ -82,15 +81,23 @@ function fallbackToAllDefinitions(
   apis: Record<string, ResolvedApi>,
   config: ConfigApis
 ): Entrypoint[] {
-  return Object.entries(apis).map(([alias, { root }]) => ({
+  return Object.entries(apis).map(([alias, { root, output }]) => ({
     path: isAbsoluteUrl(root) ? root : resolve(getConfigDirectory(config), root),
     alias,
+    output: output && resolve(getConfigDirectory(config), output),
   }));
 }
 
 function getAliasOrPath(config: ConfigApis, aliasOrPath: string): Entrypoint {
-  return config.apis[aliasOrPath]
-    ? { path: config.apis[aliasOrPath]?.root, alias: aliasOrPath }
+  const aliasApi = config.apis[aliasOrPath];
+  return aliasApi
+    ? {
+        path: isAbsoluteUrl(aliasApi.root)
+          ? aliasApi.root
+          : resolve(getConfigDirectory(config), aliasApi.root),
+        alias: aliasOrPath,
+        output: aliasApi.output && resolve(getConfigDirectory(config), aliasApi.output),
+      }
     : {
         path: aliasOrPath,
         // find alias by path, take the first match
@@ -101,12 +108,12 @@ function getAliasOrPath(config: ConfigApis, aliasOrPath: string): Entrypoint {
       };
 }
 
-async function expandGlobsInEntrypoints(args: string[], config: ConfigApis) {
+async function expandGlobsInEntrypoints(argApis: string[], config: ConfigApis) {
   return (
     await Promise.all(
-      (args as string[]).map(async (aliasOrPath) => {
+      argApis.map(async (aliasOrPath) => {
         return glob.hasMagic(aliasOrPath) && !isAbsoluteUrl(aliasOrPath)
-          ? (await glob.__promisify__(aliasOrPath)).map((g: string) => getAliasOrPath(config, g))
+          ? (await promisify(glob)(aliasOrPath)).map((g: string) => getAliasOrPath(config, g))
           : getAliasOrPath(config, aliasOrPath);
       })
     )
@@ -278,23 +285,15 @@ export function getAndValidateFileExtension(fileName: string): NonNullable<Outpu
   return 'yaml';
 }
 
-export function pluralize(label: string, num: number) {
-  if (label.endsWith('is')) {
-    [label] = label.split(' ');
-    return num === 1 ? `${label} is` : `${label}s are`;
-  }
-  return num === 1 ? `${label}` : `${label}s`;
-}
-
 export function handleError(e: Error, ref: string) {
   switch (e.constructor) {
     case HandledError: {
       throw e;
     }
     case ResolveError:
-      return exitWithError(`Failed to resolve API description at ${ref}:\n\n  - ${e.message}.`);
+      return exitWithError(`Failed to resolve API description at ${ref}:\n\n  - ${e.message}`);
     case YamlParseError:
-      return exitWithError(`Failed to parse API description at ${ref}:\n\n  - ${e.message}.`);
+      return exitWithError(`Failed to parse API description at ${ref}:\n\n  - ${e.message}`);
     case CircularJSONNotSupportedError: {
       return exitWithError(
         `Detected circular reference which can't be converted to JSON.\n` +
@@ -306,7 +305,7 @@ export function handleError(e: Error, ref: string) {
     case ConfigValidationError:
       return exitWithError(e.message);
     default: {
-      exitWithError(`Something went wrong when processing ${ref}:\n\n  - ${e.message}.`);
+      exitWithError(`Something went wrong when processing ${ref}:\n\n  - ${e.message}`);
     }
   }
 }
@@ -352,7 +351,7 @@ export function printLintTotals(totals: Totals, definitionsCount: number) {
   process.stderr.write('\n');
 }
 
-export function printConfigLintTotals(totals: Totals): void {
+export function printConfigLintTotals(totals: Totals, command?: string | number): void {
   if (totals.errors > 0) {
     process.stderr.write(
       red(`❌ Your config has ${totals.errors} ${pluralize('error', totals.errors)}.`)
@@ -361,32 +360,41 @@ export function printConfigLintTotals(totals: Totals): void {
     process.stderr.write(
       yellow(`⚠️ Your config has ${totals.warnings} ${pluralize('warning', totals.warnings)}.\n`)
     );
+  } else if (command === 'check-config') {
+    process.stderr.write(green('✅  Your config is valid.\n'));
   }
 }
 
-export function getOutputFileName(
-  entrypoint: string,
-  entries: number,
-  output?: string,
-  ext?: BundleOutputFormat
-) {
-  if (!output) {
-    return { outputFile: 'stdout', ext: ext || 'yaml' };
+export function getOutputFileName({
+  entrypoint,
+  output,
+  argvOutput,
+  ext,
+  entries,
+}: {
+  entrypoint: string;
+  output?: string;
+  argvOutput?: string;
+  ext?: BundleOutputFormat;
+  entries: number;
+}) {
+  let outputFile = output || argvOutput;
+  if (!outputFile) {
+    return { ext: ext || 'yaml' };
   }
 
-  let outputFile = output;
-  if (entries > 1) {
+  if (entries > 1 && argvOutput) {
     ext = ext || (extname(entrypoint).substring(1) as BundleOutputFormat);
-    if (!outputExtensions.includes(ext as any)) {
+    if (!outputExtensions.includes(ext)) {
       throw new Error(`Invalid file extension: ${ext}.`);
     }
-    outputFile = join(output, basename(entrypoint, extname(entrypoint))) + '.' + ext;
+    outputFile = join(argvOutput, basename(entrypoint, extname(entrypoint))) + '.' + ext;
   } else {
-    if (output) {
-      ext = ext || (extname(output).substring(1) as BundleOutputFormat);
-    }
-    ext = ext || (extname(entrypoint).substring(1) as BundleOutputFormat);
-    if (!outputExtensions.includes(ext as any)) {
+    ext =
+      ext ||
+      (extname(outputFile).substring(1) as BundleOutputFormat) ||
+      (extname(entrypoint).substring(1) as BundleOutputFormat);
+    if (!outputExtensions.includes(ext)) {
       throw new Error(`Invalid file extension: ${ext}.`);
     }
     outputFile = join(dirname(outputFile), basename(outputFile, extname(outputFile))) + '.' + ext;
@@ -520,7 +528,10 @@ export function checkIfRulesetExist(rules: typeof StyleguideConfig.prototype.rul
   const ruleset = {
     ...rules.oas2,
     ...rules.oas3_0,
-    ...rules.oas3_0,
+    ...rules.oas3_1,
+    ...rules.async2,
+    ...rules.async3,
+    ...rules.arazzo1,
   };
 
   if (isEmptyObject(ruleset)) {
@@ -538,7 +549,10 @@ export function cleanColors(input: string): string {
 export async function sendTelemetry(
   argv: Arguments | undefined,
   exit_code: ExitCode,
-  has_config: boolean | undefined
+  has_config: boolean | undefined,
+  spec_version: string | undefined,
+  spec_keyword: string | undefined,
+  spec_full_version: string | undefined
 ): Promise<void> {
   try {
     if (!argv) {
@@ -566,8 +580,12 @@ export async function sendTelemetry(
       environment_ci: process.env.CI,
       raw_input: cleanRawInput(process.argv.slice(2)),
       has_config,
+      spec_version,
+      spec_keyword,
+      spec_full_version,
     };
     await fetch(`https://api.redocly.com/registry/telemetry/cli`, {
+      timeout: DEFAULT_FETCH_TIMEOUT,
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -595,6 +613,9 @@ export type Analytics = {
   environment_ci?: string;
   raw_input: string;
   has_config?: boolean;
+  spec_version?: string;
+  spec_keyword?: string;
+  spec_full_version?: string;
 };
 
 function isFile(value: string) {
@@ -658,4 +679,33 @@ export function checkForDeprecatedOptions<T>(argv: T, deprecatedOptions: Array<k
       );
     }
   }
+}
+
+export function notifyAboutIncompatibleConfigOptions(
+  themeOpenapiOptions: Record<string, unknown> | undefined
+) {
+  if (isPlainObject(themeOpenapiOptions)) {
+    const propertiesSet = Object.keys(themeOpenapiOptions);
+    const deprecatedSet = Object.keys(deprecatedRefDocsSchema.properties);
+    const intersection = propertiesSet.filter((prop) => deprecatedSet.includes(prop));
+    if (intersection.length > 0) {
+      process.stderr.write(
+        yellow(
+          `\n${pluralize('Property', intersection.length)} ${gray(
+            intersection.map((prop) => `'${prop}'`).join(', ')
+          )} ${pluralize(
+            'is',
+            intersection.length
+          )} only used in API Reference Docs and Redoc version 2.x or earlier.\n\n`
+        )
+      );
+    }
+  }
+}
+
+export function formatPath(path: string) {
+  if (isAbsoluteUrl(path)) {
+    return path;
+  }
+  return relative(process.cwd(), path);
 }

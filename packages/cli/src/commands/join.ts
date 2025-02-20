@@ -1,47 +1,42 @@
 import * as path from 'path';
 import { red, blue, yellow, green } from 'colorette';
 import { performance } from 'perf_hooks';
-const isEqual = require('lodash.isequal');
 import {
-  Config,
-  Oas3Definition,
   SpecVersion,
   BaseResolver,
-  Document,
-  StyleguideConfig,
-  Oas3Tag,
   formatProblems,
   getTotals,
-  lintDocument,
   detectSpec,
   bundleDocument,
-  Referenced,
   isRef,
-  RuleSeverity,
 } from '@redocly/openapi-core';
-
+import { dequal } from '@redocly/openapi-core/lib/utils';
 import {
   getFallbackApisOrExit,
   printExecutionTime,
-  handleError,
-  printLintTotals,
   exitWithError,
   sortTopLevelKeysForOas,
   getAndValidateFileExtension,
   writeToFileByExtension,
-  checkForDeprecatedOptions,
 } from '../utils/miscellaneous';
 import { isObject, isString, keysOf } from '../utils/js-utils';
-import {
+import { COMPONENTS, OPENAPI3_METHOD } from './split/types';
+import { crawl, startsWithComponents } from './split';
+
+import type { Document, Referenced } from '@redocly/openapi-core';
+import type { BundleResult } from '@redocly/openapi-core/lib/bundle';
+import type {
+  Oas3Definition,
+  Oas3_1Definition,
   Oas3Parameter,
   Oas3PathItem,
   Oas3Server,
-  Oas3_1Definition,
+  Oas3Tag,
 } from '@redocly/openapi-core/lib/typings/openapi';
-import { OPENAPI3_METHOD } from './split/types';
-import { BundleResult } from '@redocly/openapi-core/lib/bundle';
+import type { StrictObject } from '@redocly/openapi-core/lib/utils';
+import type { CommandArgs } from '../wrapper';
+import type { VerifyConfigOptions } from '../types';
 
-const COMPONENTS = 'components';
 const Tags = 'tags';
 const xTagGroups = 'x-tagGroups';
 let potentialConflictsTotal = 0;
@@ -58,35 +53,26 @@ type JoinDocumentContext = {
 
 export type JoinOptions = {
   apis: string[];
-  lint?: boolean;
-  decorate?: boolean;
-  preprocess?: boolean;
   'prefix-tags-with-info-prop'?: string;
   'prefix-tags-with-filename'?: boolean;
   'prefix-components-with-info-prop'?: string;
   'without-x-tag-groups'?: boolean;
   output?: string;
-  config?: string;
-  'lint-config'?: RuleSeverity;
-};
+} & VerifyConfigOptions;
 
-export async function handleJoin(argv: JoinOptions, config: Config, packageVersion: string) {
+export async function handleJoin({
+  argv,
+  config,
+  version: packageVersion,
+}: CommandArgs<JoinOptions>) {
   const startedAt = performance.now();
-
-  if (argv.apis.length < 2) {
-    return exitWithError(`At least 2 apis should be provided. \n\n`);
-  }
-
-  checkForDeprecatedOptions(argv, ['lint'] as Array<keyof JoinOptions>);
-
-  const fileExtension = getAndValidateFileExtension(argv.output || argv.apis[0]);
 
   const {
     'prefix-components-with-info-prop': prefixComponentsWithInfoProp,
     'prefix-tags-with-filename': prefixTagsWithFilename,
     'prefix-tags-with-info-prop': prefixTagsWithInfoProp,
     'without-x-tag-groups': withoutXTagGroups,
-    output: specFilename = `openapi.${fileExtension}`,
+    output,
   } = argv;
 
   const usedTagsOptions = [
@@ -97,11 +83,18 @@ export async function handleJoin(argv: JoinOptions, config: Config, packageVersi
 
   if (usedTagsOptions.length > 1) {
     return exitWithError(
-      `You use ${yellow(usedTagsOptions.join(', '))} together.\nPlease choose only one! \n\n`
+      `You use ${yellow(usedTagsOptions.join(', '))} together.\nPlease choose only one!`
     );
   }
 
   const apis = await getFallbackApisOrExit(argv.apis, config);
+  if (apis.length < 2) {
+    return exitWithError(`At least 2 APIs should be provided.`);
+  }
+
+  const fileExtension = getAndValidateFileExtension(output || apis[0].path);
+  const specFilename = output || `openapi.${fileExtension}`;
+
   const externalRefResolver = new BaseResolver(config.resolve);
   const documents = await Promise.all(
     apis.map(
@@ -109,23 +102,19 @@ export async function handleJoin(argv: JoinOptions, config: Config, packageVersi
     )
   );
 
-  if (!argv.decorate) {
-    const decorators = new Set([
-      ...Object.keys(config.styleguide.decorators.oas3_0),
-      ...Object.keys(config.styleguide.decorators.oas3_1),
-      ...Object.keys(config.styleguide.decorators.oas2),
-    ]);
-    config.styleguide.skipDecorators(Array.from(decorators));
-  }
+  const decorators = new Set([
+    ...Object.keys(config.styleguide.decorators.oas3_0),
+    ...Object.keys(config.styleguide.decorators.oas3_1),
+    ...Object.keys(config.styleguide.decorators.oas2),
+  ]);
+  config.styleguide.skipDecorators(Array.from(decorators));
 
-  if (!argv.preprocess) {
-    const preprocessors = new Set([
-      ...Object.keys(config.styleguide.preprocessors.oas3_0),
-      ...Object.keys(config.styleguide.preprocessors.oas3_1),
-      ...Object.keys(config.styleguide.preprocessors.oas2),
-    ]);
-    config.styleguide.skipPreprocessors(Array.from(preprocessors));
-  }
+  const preprocessors = new Set([
+    ...Object.keys(config.styleguide.preprocessors.oas3_0),
+    ...Object.keys(config.styleguide.preprocessors.oas3_1),
+    ...Object.keys(config.styleguide.preprocessors.oas2),
+  ]);
+  config.styleguide.skipPreprocessors(Array.from(preprocessors));
 
   const bundleResults = await Promise.all(
     documents.map((document) =>
@@ -144,12 +133,12 @@ export async function handleJoin(argv: JoinOptions, config: Config, packageVersi
     if (fileTotals.errors) {
       formatProblems(problems, {
         totals: fileTotals,
-        version: document.parsed.version,
+        version: packageVersion,
       });
       exitWithError(
         `❌ Errors encountered while bundling ${blue(
           document.source.absoluteRef
-        )}: join will not proceed.\n`
+        )}: join will not proceed.`
       );
     }
   }
@@ -160,26 +149,18 @@ export async function handleJoin(argv: JoinOptions, config: Config, packageVersi
       const version = detectSpec(document.parsed);
       if (version !== SpecVersion.OAS3_0 && version !== SpecVersion.OAS3_1) {
         return exitWithError(
-          `Only OpenAPI 3.0 and OpenAPI 3.1 are supported: ${blue(
-            document.source.absoluteRef
-          )} \n\n`
+          `Only OpenAPI 3.0 and OpenAPI 3.1 are supported: ${blue(document.source.absoluteRef)}.`
         );
       }
 
       oasVersion = oasVersion ?? version;
       if (oasVersion !== version) {
         return exitWithError(
-          `All APIs must use the same OpenAPI version: ${blue(document.source.absoluteRef)} \n\n`
+          `All APIs must use the same OpenAPI version: ${blue(document.source.absoluteRef)}.`
         );
       }
     } catch (e) {
-      return exitWithError(`${e.message}: ${blue(document.source.absoluteRef)}`);
-    }
-  }
-
-  if (argv.lint) {
-    for (const document of documents) {
-      await validateApi(document, config.styleguide, externalRefResolver, packageVersion);
+      return exitWithError(`${e.message}: ${blue(document.source.absoluteRef)}.`);
     }
   }
 
@@ -333,7 +314,7 @@ export async function handleJoin(argv: JoinOptions, config: Config, packageVersi
     }
   }
 
-  function collectServers(openapi: Oas3Definition) {
+  function collectServers(openapi: Oas3Definition | Oas3_1Definition) {
     const { servers } = openapi;
     if (servers) {
       if (!joinedDef.hasOwnProperty('servers')) {
@@ -347,7 +328,10 @@ export async function handleJoin(argv: JoinOptions, config: Config, packageVersi
     }
   }
 
-  function collectExternalDocs(openapi: Oas3Definition, { api }: JoinDocumentContext) {
+  function collectExternalDocs(
+    openapi: Oas3Definition | Oas3_1Definition,
+    { api }: JoinDocumentContext
+  ) {
     const { externalDocs } = openapi;
     if (externalDocs) {
       if (joinedDef.hasOwnProperty('externalDocs')) {
@@ -361,7 +345,7 @@ export async function handleJoin(argv: JoinOptions, config: Config, packageVersi
   }
 
   function collectPaths(
-    openapi: Oas3Definition,
+    openapi: Oas3Definition | Oas3_1Definition,
     {
       apiFilename,
       apiTitle,
@@ -435,7 +419,7 @@ export async function handleJoin(argv: JoinOptions, config: Config, packageVersi
         for (const pathServer of joinedDef.paths[path].servers) {
           if (pathServer.url === server.url) {
             if (!isServersEqual(pathServer, server)) {
-              exitWithError(`Different server values for (${server.url}) in ${path}`);
+              exitWithError(`Different server values for (${server.url}) in ${path}.`);
             }
             isFoundServer = true;
           }
@@ -469,8 +453,8 @@ export async function handleJoin(argv: JoinOptions, config: Config, packageVersi
           // Compare properties only if both are reference objects
           if (!isRef(pathParameter) && !isRef(parameter)) {
             if (pathParameter.name === parameter.name && pathParameter.in === parameter.in) {
-              if (!isEqual(pathParameter.schema, parameter.schema)) {
-                exitWithError(`Different parameter schemas for (${parameter.name}) in ${path}`);
+              if (!dequal(pathParameter.schema, parameter.schema)) {
+                exitWithError(`Different parameter schemas for (${parameter.name}) in ${path}.`);
               }
               isFoundParameter = true;
             }
@@ -555,7 +539,7 @@ export async function handleJoin(argv: JoinOptions, config: Config, packageVersi
 
   function isServersEqual(serverOne: Oas3Server, serverTwo: Oas3Server) {
     if (serverOne.description === serverTwo.description) {
-      return isEqual(serverOne.variables, serverTwo.variables);
+      return dequal(serverOne.variables, serverTwo.variables);
     }
 
     return false;
@@ -589,7 +573,7 @@ export async function handleJoin(argv: JoinOptions, config: Config, packageVersi
 
   function collectWebhooks(
     oasVersion: SpecVersion,
-    openapi: Oas3_1Definition,
+    openapi: StrictObject<Oas3Definition | Oas3_1Definition>,
     {
       apiFilename,
       apiTitle,
@@ -645,8 +629,8 @@ export async function handleJoin(argv: JoinOptions, config: Config, packageVersi
     const firstApi = documents[0];
     const openapi = firstApi.parsed;
     const componentsPrefix = getInfoPrefix(openapi.info, prefixComponentsWithInfoProp, COMPONENTS);
-    if (!openapi.openapi) exitWithError('Version of specification is not found in. \n');
-    if (!openapi.info) exitWithError('Info section is not found in specification. \n');
+    if (!openapi.openapi) exitWithError('Version of specification is not found.');
+    if (!openapi.info) exitWithError('Info section is not found in specification.');
     if (openapi.info?.description) {
       openapi.info.description = addComponentsPrefix(openapi.info.description, componentsPrefix);
     }
@@ -656,7 +640,7 @@ export async function handleJoin(argv: JoinOptions, config: Config, packageVersi
 }
 
 function doesComponentsDiffer(curr: object, next: object) {
-  return !isEqual(Object.values(curr)[0], Object.values(next)[0]);
+  return !dequal(Object.values(curr)[0], Object.values(next)[0]);
 }
 
 function validateComponentsDifference(files: any) {
@@ -756,72 +740,46 @@ function addComponentsPrefix(description: string, componentsPrefix: string) {
 function addSecurityPrefix(security: any, componentsPrefix: string) {
   return componentsPrefix
     ? security?.map((s: any) => {
-        const key = Object.keys(s)[0];
-        return { [componentsPrefix + '_' + key]: s[key] };
+        const joinedSecuritySchema = {};
+        for (const [key, value] of Object.entries(s)) {
+          Object.assign(joinedSecuritySchema, { [componentsPrefix + '_' + key]: value });
+        }
+        return joinedSecuritySchema;
       })
     : security;
 }
 
 function getInfoPrefix(info: any, prefixArg: string | undefined, type: string) {
   if (!prefixArg) return '';
-  if (!info) exitWithError('Info section is not found in specification. \n');
+  if (!info) exitWithError('Info section is not found in specification.');
   if (!info[prefixArg])
     exitWithError(
-      `${yellow(`prefix-${type}-with-info-prop`)} argument value is not found in info section. \n`
+      `${yellow(`prefix-${type}-with-info-prop`)} argument value is not found in info section.`
     );
   if (!isString(info[prefixArg]))
-    exitWithError(
-      `${yellow(`prefix-${type}-with-info-prop`)} argument value should be string. \n\n`
-    );
+    exitWithError(`${yellow(`prefix-${type}-with-info-prop`)} argument value should be string.`);
   if (info[prefixArg].length > 50)
     exitWithError(
       `${yellow(
         `prefix-${type}-with-info-prop`
-      )} argument value length should not exceed 50 characters. \n\n`
+      )} argument value length should not exceed 50 characters.`
     );
-  return info[prefixArg];
+  return info[prefixArg].replaceAll(/\s/g, '_');
 }
 
-async function validateApi(
-  document: Document,
-  config: StyleguideConfig,
-  externalRefResolver: BaseResolver,
-  packageVersion: string
-) {
-  try {
-    const results = await lintDocument({ document, config, externalRefResolver });
-    const fileTotals = getTotals(results);
-    formatProblems(results, { format: 'stylish', totals: fileTotals, version: packageVersion });
-    printLintTotals(fileTotals, 2);
-  } catch (err) {
-    handleError(err, document.parsed);
-  }
-}
-
-function crawl(object: any, visitor: any) {
-  if (!isObject(object)) return;
-  for (const key of Object.keys(object)) {
-    visitor(object[key], key);
-    crawl(object[key], visitor);
-  }
-}
-
-function replace$Refs(obj: any, componentsPrefix: string) {
-  crawl(obj, (node: any) => {
-    if (node.$ref && isString(node.$ref) && node.$ref.startsWith(`#/${COMPONENTS}/`)) {
+function replace$Refs(obj: unknown, componentsPrefix: string) {
+  crawl(obj, (node: Record<string, unknown>) => {
+    if (node.$ref && typeof node.$ref === 'string' && startsWithComponents(node.$ref)) {
       const name = path.basename(node.$ref);
       node.$ref = node.$ref.replace(name, componentsPrefix + '_' + name);
-    } else if (
-      node.discriminator &&
-      node.discriminator.mapping &&
-      isObject(node.discriminator.mapping)
-    ) {
+    } else if (isObject(node.discriminator) && isObject(node.discriminator.mapping)) {
       const { mapping } = node.discriminator;
       for (const name of Object.keys(mapping)) {
-        if (isString(mapping[name]) && mapping[name].startsWith(`#/${COMPONENTS}/`)) {
-          mapping[name] = mapping[name]
+        const mappingPointer = mapping[name];
+        if (typeof mappingPointer === 'string' && startsWithComponents(mappingPointer)) {
+          mapping[name] = mappingPointer
             .split('/')
-            .map((name: string, i: number, arr: []) => {
+            .map((name, i, arr) => {
               return arr.length - 1 === i && !name.includes(componentsPrefix)
                 ? componentsPrefix + '_' + name
                 : name;

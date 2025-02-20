@@ -164,7 +164,7 @@ describe('bundle', () => {
       ''
     );
 
-    const config = await makeConfig({}, { 'registry-dependencies': 'on' });
+    const config = await makeConfig({ rules: {}, decorators: { 'registry-dependencies': 'on' } });
 
     const {
       bundle: result,
@@ -205,7 +205,7 @@ describe('bundle', () => {
       ''
     );
 
-    const config = await makeConfig({});
+    const config = await makeConfig({ rules: {} });
 
     const {
       bundle: { parsed },
@@ -256,6 +256,66 @@ describe('bundle', () => {
     expect(problems).toHaveLength(0);
     expect(parsed).toEqual(origCopy);
   });
+
+  it('should bundle schemas with properties named $ref and externalValues correctly', async () => {
+    const { bundle: res, problems } = await bundle({
+      config: new Config({} as ResolvedConfig),
+      ref: path.join(__dirname, 'fixtures/refs/openapi-with-special-names-in-props.yaml'),
+    });
+    expect(problems).toHaveLength(0);
+    expect(res.parsed).toMatchSnapshot();
+  });
+
+  it('should not fail when bundling openapi with nulls', async () => {
+    const testDocument = parseYamlToDocument(
+      outdent`
+        openapi: 3.1.0
+        paths: 
+          /:
+            get: 
+              responses: 
+                200:
+                  content: 
+                    application/json: 
+                      schema: 
+                        type: object
+                        properties: 
+                      examples: 
+                        Foo:           
+      `,
+      ''
+    );
+
+    const config = await makeConfig({ rules: {} });
+
+    const {
+      bundle: { parsed },
+      problems,
+    } = await bundleDocument({
+      document: testDocument,
+      config: config,
+      externalRefResolver: new BaseResolver(),
+    });
+
+    expect(problems).toHaveLength(0);
+    expect(parsed).toMatchInlineSnapshot(`
+      openapi: 3.1.0
+      paths:
+        /:
+          get:
+            responses:
+              '200':
+                content:
+                  application/json:
+                    schema:
+                      type: object
+                      properties: null
+                    examples:
+                      Foo: null
+      components: {}
+
+    `);
+  });
 });
 
 describe('bundleFromString', () => {
@@ -272,5 +332,147 @@ describe('bundleFromString', () => {
     });
     expect(problems).toHaveLength(0);
     expect(rest.source.body).toEqual(stringDocument);
+  });
+});
+
+describe('bundle async', () => {
+  it('should bundle async of version 2.x', async () => {
+    const testDocument = parseYamlToDocument(
+      outdent`
+        asyncapi: '2.6.0'
+        info:
+          title: Account Service
+          version: 1.0.0
+          description: This service is in charge of processing user signups
+        channels:
+          user/signedup:
+            subscribe:
+              message:
+                $ref: '#/components/messages/UserSignedUp'
+        components:
+          schemas:
+            UserSignedUp:
+              type: object
+              properties:
+                displayName:
+                  type: string
+                  description: Name of the user
+          messages:
+            UserSignedUp:
+              payload:
+                $ref: '#/components/schemas/UserSignedUp'
+      `,
+      ''
+    );
+
+    const config = await makeConfig({ rules: {} });
+
+    const {
+      bundle: { parsed },
+      problems,
+    } = await bundleDocument({
+      document: testDocument,
+      config: config,
+      externalRefResolver: new BaseResolver(),
+      dereference: true,
+    });
+
+    expect(problems).toHaveLength(0);
+    expect(parsed).toMatchInlineSnapshot(`
+      asyncapi: 2.6.0
+      info:
+        title: Account Service
+        version: 1.0.0
+        description: This service is in charge of processing user signups
+      channels:
+        user/signedup:
+          subscribe:
+            message:
+              payload: &ref_1
+                type: object
+                properties: &ref_0
+                  displayName:
+                    type: string
+                    description: Name of the user
+      components:
+        schemas:
+          UserSignedUp:
+            type: object
+            properties: *ref_0
+        messages:
+          UserSignedUp:
+            payload: *ref_1
+
+    `);
+  });
+
+  it('should bundle async of version 3.0', async () => {
+    const testDocument = parseYamlToDocument(
+      outdent`
+        asyncapi: 3.0.0
+        info:
+          title: Account Service
+          version: 1.0.0
+          description: This service is in charge of processing user signups
+        operations:
+          sendUserSignedup:
+            action: send
+            messages:
+              - $ref: '#/components/messages/UserSignedUp'
+        components:
+          schemas:
+            UserSignedUp:
+              type: object
+              properties:
+                displayName:
+                  type: string
+                  description: Name of the user
+          messages:
+            UserSignedUp:
+              payload:
+                $ref: '#/components/schemas/UserSignedUp'
+      `,
+      ''
+    );
+
+    const config = await makeConfig({ rules: {} });
+
+    const {
+      bundle: { parsed },
+      problems,
+    } = await bundleDocument({
+      document: testDocument,
+      config: config,
+      externalRefResolver: new BaseResolver(),
+      dereference: true,
+    });
+
+    expect(problems).toHaveLength(0);
+    expect(parsed).toMatchInlineSnapshot(`
+      asyncapi: 3.0.0
+      info:
+        title: Account Service
+        version: 1.0.0
+        description: This service is in charge of processing user signups
+      operations:
+        sendUserSignedup:
+          action: send
+          messages:
+            - payload: &ref_1
+                type: object
+                properties: &ref_0
+                  displayName:
+                    type: string
+                    description: Name of the user
+      components:
+        schemas:
+          UserSignedUp:
+            type: object
+            properties: *ref_0
+        messages:
+          UserSignedUp:
+            payload: *ref_1
+
+    `);
   });
 });

@@ -25,7 +25,10 @@ describe('oas3 remove-x-internal', () => {
     const { bundle: res } = await bundleDocument({
       document: testDocument,
       externalRefResolver: new BaseResolver(),
-      config: await makeConfig({}, { 'remove-x-internal': { internalFlagProperty: 'removeit' } }),
+      config: await makeConfig({
+        rules: {},
+        decorators: { 'remove-x-internal': { internalFlagProperty: 'removeit' } },
+      }),
     });
     expect(res.parsed).toMatchInlineSnapshot(`
           openapi: 3.0.0
@@ -92,7 +95,7 @@ describe('oas3 remove-x-internal', () => {
     const { bundle: res } = await bundleDocument({
       document: testDoc,
       externalRefResolver: new BaseResolver(),
-      config: await makeConfig({}, { 'remove-x-internal': 'on' }),
+      config: await makeConfig({ rules: {}, decorators: { 'remove-x-internal': 'on' } }),
     });
     expect(res.parsed).toMatchInlineSnapshot(`
       openapi: 3.1.0
@@ -165,7 +168,7 @@ describe('oas3 remove-x-internal', () => {
     const { bundle: res } = await bundleDocument({
       document: testDoc,
       externalRefResolver: new BaseResolver(),
-      config: await makeConfig({}, { 'remove-x-internal': 'on' }),
+      config: await makeConfig({ rules: {}, decorators: { 'remove-x-internal': 'on' } }),
     });
 
     expect(res.parsed).toMatchInlineSnapshot(`
@@ -239,7 +242,7 @@ describe('oas3 remove-x-internal', () => {
     const { bundle: res } = await bundleDocument({
       document: testDoc,
       externalRefResolver: new BaseResolver(),
-      config: await makeConfig({}, { 'remove-x-internal': 'on' }),
+      config: await makeConfig({ rules: {}, decorators: { 'remove-x-internal': 'on' } }),
     });
     expect(res.parsed).toMatchInlineSnapshot(`
       openapi: 3.0.1
@@ -265,6 +268,103 @@ describe('oas3 remove-x-internal', () => {
             name: product_id
             schema:
               type: string
+
+    `);
+  });
+
+  it('should remove $refs and the corresponding discriminator mapping', async () => {
+    const testDoc = parseYamlToDocument(
+      outdent`
+        openapi: 3.1.0
+        info: {}
+        paths:
+          /test:
+            post:
+              requestBody:
+                content:
+                  application/json:
+                    schema:
+                      $ref: '#/components/schemas/christmas-tree'
+        components:
+          schemas:
+            christmas-tree:
+              type: array
+              items:
+                discriminator:
+                  propertyName: type
+                  mapping:
+                    candy-cane: '#/components/schemas/candy-cane'
+                    popcorn: '#/components/schemas/popcorn'
+                    cranberry: '#/components/schemas/cranberry'
+                anyOf:
+                  - $ref: '#/components/schemas/candy-cane'
+                  - $ref: '#/components/schemas/popcorn'
+                  - $ref: '#/components/schemas/cranberry'
+            candy-cane:
+              x-internal: true
+              title: candy-cane
+              type: object
+              properties:
+                type:
+                  type: string
+                  enum: [candy-cane]
+            popcorn:
+              type: object
+              properties:
+                type:
+                  type: string
+                  enum: [popcorn]
+            cranberry:
+              type: object
+              properties:
+                type:
+                  type: string
+                  enum: [cranberry]
+      `
+    );
+    const { bundle: res } = await bundleDocument({
+      document: testDoc,
+      externalRefResolver: new BaseResolver(),
+      config: await makeConfig({ rules: {}, decorators: { 'remove-x-internal': 'on' } }),
+    });
+    expect(res.parsed).toMatchInlineSnapshot(`
+      openapi: 3.1.0
+      info: {}
+      paths:
+        /test:
+          post:
+            requestBody:
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/christmas-tree'
+      components:
+        schemas:
+          christmas-tree:
+            type: array
+            items:
+              discriminator:
+                propertyName: type
+                mapping:
+                  popcorn: '#/components/schemas/popcorn'
+                  cranberry: '#/components/schemas/cranberry'
+              anyOf:
+                - $ref: '#/components/schemas/popcorn'
+                - $ref: '#/components/schemas/cranberry'
+          popcorn:
+            type: object
+            properties:
+              type:
+                type: string
+                enum:
+                  - popcorn
+          cranberry:
+            type: object
+            properties:
+              type:
+                type: string
+                enum:
+                  - cranberry
 
     `);
   });
@@ -302,7 +402,7 @@ describe('oas2 remove-x-internal', () => {
     const { bundle: res } = await bundleDocument({
       document: testDoc,
       externalRefResolver: new BaseResolver(),
-      config: await makeConfig({}, { 'remove-x-internal': 'on' }),
+      config: await makeConfig({ rules: {}, decorators: { 'remove-x-internal': 'on' } }),
     });
     expect(res.parsed).toMatchInlineSnapshot(`
           swagger: '2.0'

@@ -1,10 +1,10 @@
-import { Oas2Rule } from '../../visitors';
-import { Spec } from '../common/spec';
+import { Struct } from '../common/struct';
 import { NoInvalidSchemaExamples } from '../common/no-invalid-schema-examples';
 import { NoInvalidParameterExamples } from '../common/no-invalid-parameter-examples';
 import { InfoContact } from '../common/info-contact';
 import { InfoLicense } from '../common/info-license';
 import { InfoLicenseUrl } from '../common/info-license-url';
+import { InfoLicenseStrict } from '../common/info-license-strict';
 import { BooleanParameterPrefixes } from './boolean-parameter-prefixes';
 import { TagDescription } from '../common/tag-description';
 import { TagsAlphabetical } from '../common/tags-alphabetical';
@@ -42,16 +42,22 @@ import { ScalarPropertyMissingExample } from '../common/scalar-property-missing-
 import { RequiredStringPropertyMissingMinLength } from '../common/required-string-property-missing-min-length';
 import { SpecStrictRefs } from '../common/spec-strict-refs';
 import { NoRequiredSchemaPropertiesUndefined } from '../common/no-required-schema-properties-undefined';
+import { NoSchemaTypeMismatch } from '../common/no-schema-type-mismatch';
 
-import type { Oas2RuleSet } from 'core/src/oas-types';
+import type { Oas2Rule } from '../../visitors';
+import type { Oas2RuleSet } from '../../oas-types';
 
 export const rules: Oas2RuleSet<'built-in'> = {
-  spec: Spec as Oas2Rule,
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  //@ts-ignore TODO: This is depricated property `spec` and should be removed in the future
+  spec: Struct as Oas2Rule,
+  struct: Struct as Oas2Rule,
   'no-invalid-schema-examples': NoInvalidSchemaExamples,
   'no-invalid-parameter-examples': NoInvalidParameterExamples,
   'info-contact': InfoContact as Oas2Rule,
   'info-license': InfoLicense as Oas2Rule,
   'info-license-url': InfoLicenseUrl as Oas2Rule,
+  'info-license-strict': InfoLicenseStrict as Oas2Rule,
   'tag-description': TagDescription as Oas2Rule,
   'tags-alphabetical': TagsAlphabetical as Oas2Rule,
   'paths-kebab-case': PathsKebabCase as Oas2Rule,
@@ -86,10 +92,11 @@ export const rules: Oas2RuleSet<'built-in'> = {
   'path-segment-plural': PathSegmentPlural as Oas2Rule,
   'response-contains-header': ResponseContainsHeader as Oas2Rule,
   'response-contains-property': ResponseContainsProperty as Oas2Rule,
-  'scalar-property-missing-example': ScalarPropertyMissingExample,
-  'required-string-property-missing-min-length': RequiredStringPropertyMissingMinLength,
-  'spec-strict-refs': SpecStrictRefs,
-  'no-required-schema-properties-undefined': NoRequiredSchemaPropertiesUndefined,
+  'scalar-property-missing-example': ScalarPropertyMissingExample as Oas2Rule,
+  'required-string-property-missing-min-length': RequiredStringPropertyMissingMinLength as Oas2Rule,
+  'spec-strict-refs': SpecStrictRefs as Oas2Rule,
+  'no-required-schema-properties-undefined': NoRequiredSchemaPropertiesUndefined as Oas2Rule,
+  'no-schema-type-mismatch': NoSchemaTypeMismatch as Oas2Rule,
 };
 
 export const preprocessors = {};

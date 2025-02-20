@@ -28,7 +28,7 @@ Then you can use it as `redocly [command] [options]`, for example:
 redocly lint path-to-root-file.yaml
 ```
 
-The minimum required versions of Node.js and NPM are 14.19.0 and 7.0.0 respectively.
+The minimum required versions of Node.js and NPM are 18.17.0 and 10.8.2 respectively.
 
 ### Docker
 
@@ -96,6 +96,10 @@ If your OpenAPI description isn't everything you hoped it would be, enhance it w
 ## Data collection
 
 This tool [collects data](./docs/usage-data.md) to help Redocly improve our products and services. You can opt out by setting the `REDOCLY_TELEMETRY` environment variable to `off`.
+
+## Update notifications
+
+Redocly CLI checks for updates on startup. You can disable this by setting the `REDOCLY_SUPPRESS_UPDATE_NOTICE` environment variable to `true`.
 
 ## More resources
 

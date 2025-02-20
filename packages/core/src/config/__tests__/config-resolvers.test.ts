@@ -1,3 +1,4 @@
+import * as util from 'util';
 import { colorize } from '../../logger';
 import { Asserts, asserts } from '../../rules/common/assertions/asserts';
 import { resolveStyleguideConfig, resolveApis, resolveConfig } from '../config-resolvers';
@@ -88,6 +89,141 @@ describe('resolveStyleguideConfig', () => {
       'operation-2xx-response': 'warn',
       'operation-description': 'error',
       'path-http-verbs-order': 'error',
+    });
+  });
+
+  it('should instantiate the plugin once', async () => {
+    // Called by plugin during init
+    const deprecateSpy = jest.spyOn(util, 'deprecate');
+
+    const config = {
+      ...baseStyleguideConfig,
+      extends: ['local-config-with-plugin-init.yaml'],
+    };
+
+    await resolveStyleguideConfig({
+      styleguideConfig: config,
+      configPath,
+    });
+
+    expect(deprecateSpy).toHaveBeenCalledTimes(1);
+
+    await resolveStyleguideConfig({
+      styleguideConfig: config,
+      configPath,
+    });
+
+    // Should not execute the init logic again
+    expect(deprecateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('should resolve realm plugin properties', async () => {
+    const config = {
+      ...baseStyleguideConfig,
+      extends: ['local-config-with-realm-plugin.yaml'],
+    };
+
+    const { plugins } = await resolveStyleguideConfig({
+      styleguideConfig: config,
+      configPath,
+    });
+
+    const localPlugin = plugins?.find((p) => p.id === 'realm-plugin');
+    expect(localPlugin).toBeDefined();
+
+    expect(localPlugin).toMatchObject({
+      id: 'realm-plugin',
+      processContent: expect.any(Function),
+      afterRoutesCreated: expect.any(Function),
+      loaders: {
+        'test-loader': expect.any(Function),
+      },
+      requiredEntitlements: ['test-entitlement'],
+      ssoConfigSchema: { type: 'object', additionalProperties: true },
+      redoclyConfigSchema: { type: 'object', additionalProperties: false },
+      ejectIgnore: ['Navbar.tsx', 'Footer.tsx'],
+    });
+  });
+
+  it('should resolve local file config with esm plugin', async () => {
+    const config = {
+      ...baseStyleguideConfig,
+      extends: ['local-config-with-esm.yaml'],
+    };
+
+    const { plugins, ...styleguide } = await resolveStyleguideConfig({
+      styleguideConfig: config,
+      configPath,
+    });
+
+    expect(styleguide?.rules?.['operation-2xx-response']).toEqual('warn');
+    expect(plugins).toBeDefined();
+    expect(plugins?.length).toBe(2);
+
+    const localPlugin = plugins?.find((p) => p.id === 'test-plugin');
+    expect(localPlugin).toBeDefined();
+
+    expect(localPlugin).toMatchObject({
+      id: 'test-plugin',
+      rules: {
+        oas3: {
+          'test-plugin/oas3-rule-name': 'oas3-rule-stub',
+        },
+      },
+    });
+
+    expect(styleguide.extendPaths!.map(removeAbsolutePath)).toEqual([
+      'resolve-config/redocly.yaml',
+      'resolve-config/local-config-with-esm.yaml',
+      'resolve-config/redocly.yaml',
+    ]);
+    expect(styleguide.pluginPaths!.map(removeAbsolutePath)).toEqual([
+      'resolve-config/plugin-esm.mjs',
+    ]);
+
+    expect(styleguide.rules).toEqual({
+      'operation-2xx-response': 'warn',
+    });
+  });
+
+  it('should resolve local file config with commonjs plugin with a default export function', async () => {
+    const config = {
+      ...baseStyleguideConfig,
+      extends: ['local-config-with-commonjs-export-function.yaml'],
+    };
+
+    const { plugins, ...styleguide } = await resolveStyleguideConfig({
+      styleguideConfig: config,
+      configPath,
+    });
+
+    expect(styleguide?.rules?.['operation-2xx-response']).toEqual('warn');
+    expect(plugins).toBeDefined();
+    expect(plugins?.length).toBe(2);
+
+    const localPlugin = plugins?.find((p) => p.id === 'test-plugin');
+    expect(localPlugin).toBeDefined();
+
+    expect(localPlugin).toMatchObject({
+      id: 'test-plugin',
+      rules: {
+        oas3: {
+          'test-plugin/oas3-rule-name': 'oas3-rule-stub',
+        },
+      },
+    });
+
+    expect(styleguide.extendPaths!.map(removeAbsolutePath)).toEqual([
+      'resolve-config/redocly.yaml',
+      'resolve-config/local-config-with-commonjs-export-function.yaml',
+      'resolve-config/redocly.yaml',
+    ]);
+    expect(styleguide.pluginPaths!.map(removeAbsolutePath)).toEqual([
+      'resolve-config/plugin-with-export-function.cjs',
+    ]);
+
+    expect(styleguide.rules).toEqual({
+      'operation-2xx-response': 'warn',
     });
   });
 
@@ -253,11 +389,23 @@ describe('resolveStyleguideConfig', () => {
 
 describe('resolveApis', () => {
   it('should resolve apis styleguideConfig and merge minimal extends', async () => {
+    const baseStyleguideConfig: StyleguideRawConfig = {
+      oas3_1Rules: {
+        'operation-2xx-response': 'error',
+      },
+    };
+    const mergedStyleguidePreset = resolveStyleguideConfig({
+      styleguideConfig: { ...baseStyleguideConfig, extends: ['minimal'] },
+    });
     const rawConfig: RawConfig = {
       apis: {
         petstore: {
           root: 'some/path',
-          styleguide: {},
+          styleguide: {
+            oas3_1Rules: {
+              'operation-2xx-response': 'error',
+            },
+          },
         },
       },
       styleguide: {
@@ -265,7 +413,7 @@ describe('resolveApis', () => {
       },
     };
     const apisResult = await resolveApis({ rawConfig });
-    expect(apisResult['petstore'].styleguide).toEqual(await minimalStyleguidePreset);
+    expect(apisResult['petstore'].styleguide).toEqual(await mergedStyleguidePreset);
   });
 
   it('should not merge recommended extends by default by every level', async () => {
@@ -390,7 +538,7 @@ describe('resolveConfig', () => {
       },
     };
 
-    const { apis } = await resolveConfig(rawConfig, configPath);
+    const { apis } = await resolveConfig({ rawConfig, configPath });
     //@ts-ignore
     expect(apis['petstore'].styleguide.plugins.length).toEqual(1);
     //@ts-ignore
@@ -427,7 +575,7 @@ describe('resolveConfig', () => {
       },
     };
 
-    const { apis } = await resolveConfig(rawConfig, configPath);
+    const { apis } = await resolveConfig({ rawConfig, configPath });
     expect(apis['petstore'].styleguide.rules).toBeDefined();
     expect(Object.keys(apis['petstore'].styleguide.rules || {}).length).toEqual(7);
     expect(apis['petstore'].styleguide.rules?.['operation-2xx-response']).toEqual('warn');
@@ -469,7 +617,7 @@ describe('resolveConfig', () => {
       },
     };
 
-    const { apis } = await resolveConfig(rawConfig, configPath);
+    const { apis } = await resolveConfig({ rawConfig, configPath });
     expect(apis['petstore'].styleguide.rules).toBeDefined();
     expect(apis['petstore'].styleguide.rules?.['operation-2xx-response']).toEqual('warn');
     expect(apis['petstore'].styleguide.rules?.['operation-4xx-response']).toEqual('error');
@@ -513,7 +661,7 @@ describe('resolveConfig', () => {
       },
     };
 
-    const { apis } = await resolveConfig(rawConfig, configPath);
+    const { apis } = await resolveConfig({ rawConfig, configPath });
     expect(apis['petstore'].styleguide.rules).toBeDefined();
     expect(apis['petstore'].styleguide.rules?.['operation-2xx-response']).toEqual('warn'); // from minimal ruleset
   });

@@ -19,12 +19,18 @@ paths:
       responses:
         '201':
           description: example description
-
+      security:
+        - scheme1: []
+          scheme2: []
+        - scheme3: []
+          scheme4: []
 components:
   schemas:
     some-property:
       description: bar description
       type: string
+      nullable: true
+      default: null
     another-property:
       description: description
       $ref: '#/components/schemas/some-property'

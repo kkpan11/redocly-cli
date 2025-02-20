@@ -19,13 +19,13 @@ For this tutorial, we've prepared a sample containing OpenAPI specification exte
 
 ## Prerequisites
 
-{% admonition type="note" name="We do, You do" %}
+{% admonition type="info" name="We do, You do" %}
 This tutorial is most effective when you follow along and complete the steps.
 {% /admonition %}
 
 - [Install @redocly/cli](../installation.md) with version 1.0.0-beta.117 or later (we use 1.0.0-beta.117 in this tutorial).
 - Download the [sample.yaml](https://gist.github.com/bandantonio/e1331ba5afd24485de5e6229c91d25ed) file into a new directory named `hide-openapi-extensions`.
-- Use your favorite IDE for editing the YAML file (we use VS Code and have the [Redocly extension](../../redocly-openapi/index.md) installed).
+- Use your favorite IDE for editing the YAML file (we use VS Code and have the [Redocly extension](https://redocly.com/docs/redocly-openapi/) installed).
 
 ## Step 1: Create a custom plugin
 
@@ -44,15 +44,17 @@ In this step, create a custom plugin and define the decorator dependency.
      },
    };
 
-   module.exports = {
-     id,
-     decorators,
+   module.exports = function hideExtensionsPlugin() {
+     return {
+       id,
+       decorators,
+     };
    };
    ```
 
 1. Save the file.
 
-{% admonition type="attention" %}
+{% admonition type="info" %}
 You can name the plugins directory and the file anything you want. Make sure you use the correct name in the Redocly configuration file (Step 3 below).
 {% /admonition %}
 
@@ -86,7 +88,7 @@ You can name the plugins directory and the file anything you want. Make sure you
 
 1. Save the file.
 
-{% admonition type="attention" %}
+{% admonition type="info" %}
 You can name the decorators directory anything you want. Make sure you use the correct directory name in the line 1 of the `plugin.js` file (Step 1 above).
 {% /admonition %}
 

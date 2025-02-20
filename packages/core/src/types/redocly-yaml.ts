@@ -1,21 +1,20 @@
-import { rootRedoclyConfigSchema, apiConfigSchema } from './portal-config-schema';
-import { themeConfigSchema } from './theme-config';
-import { NodeType, listOf } from '.';
-import { omitObjectProps, pickObjectProps, isCustomRuleId } from '../utils';
-import { PortalConfigNodeTypes } from './portal-config-schema';
+import { rootRedoclyConfigSchema } from '@redocly/config';
+import { listOf } from '.';
+import { SpecVersion, getTypes } from '../oas-types';
+import { isCustomRuleId, omitObjectProps, pickObjectProps } from '../utils';
+import { getNodeTypesFromJSONSchema } from './json-schema-adapter';
 
-const builtInCommonRules = [
-  'spec',
+import type { JSONSchema } from 'json-schema-to-ts';
+import type { NodeType } from '.';
+import type { Config } from '../config';
+
+const builtInOAS2Rules = [
   'info-contact',
   'operation-operationId',
   'tag-description',
   'tags-alphabetical',
-] as const;
-
-export type BuiltInCommonRuleId = typeof builtInCommonRules[number];
-
-const builtInCommonOASRules = [
   'info-license-url',
+  'info-license-strict',
   'info-license',
   'no-ambiguous-paths',
   'no-enum-type-mismatch',
@@ -49,11 +48,7 @@ const builtInCommonOASRules = [
   'spec-strict-refs',
   'no-unresolved-refs',
   'no-required-schema-properties-undefined',
-] as const;
-
-export type BuiltInCommonOASRuleId = typeof builtInCommonOASRules[number];
-
-const builtInOAS2Rules = [
+  'no-schema-type-mismatch',
   'boolean-parameter-prefixes',
   'request-mime-type',
   'response-contains-property',
@@ -63,6 +58,46 @@ const builtInOAS2Rules = [
 export type BuiltInOAS2RuleId = typeof builtInOAS2Rules[number];
 
 const builtInOAS3Rules = [
+  'info-contact',
+  'operation-operationId',
+  'tag-description',
+  'tags-alphabetical',
+  'info-license-url',
+  'info-license-strict',
+  'info-license',
+  'no-ambiguous-paths',
+  'no-enum-type-mismatch',
+  'no-http-verbs-in-paths',
+  'no-identical-paths',
+  'no-invalid-parameter-examples',
+  'no-invalid-schema-examples',
+  'no-path-trailing-slash',
+  'operation-2xx-response',
+  'operation-4xx-response',
+  'operation-description',
+  'operation-operationId-unique',
+  'operation-operationId-url-safe',
+  'operation-parameters-unique',
+  'operation-singular-tag',
+  'operation-summary',
+  'operation-tag-defined',
+  'parameter-description',
+  'path-declaration-must-exist',
+  'path-excludes-patterns',
+  'path-http-verbs-order',
+  'path-not-include-query',
+  'path-params-defined',
+  'path-parameters-defined',
+  'path-segment-plural',
+  'paths-kebab-case',
+  'required-string-property-missing-min-length',
+  'response-contains-header',
+  'scalar-property-missing-example',
+  'security-defined',
+  'spec-strict-refs',
+  'no-unresolved-refs',
+  'no-required-schema-properties-undefined',
+  'no-schema-type-mismatch',
   'boolean-parameter-prefixes',
   'component-name-unique',
   'no-empty-servers',
@@ -83,22 +118,103 @@ const builtInOAS3Rules = [
 
 export type BuiltInOAS3RuleId = typeof builtInOAS3Rules[number];
 
-const builtInAsync2Rules = ['channels-kebab-case', 'no-channel-trailing-slash'] as const;
+const builtInAsync2Rules = [
+  'info-contact',
+  'info-license-strict',
+  'operation-operationId',
+  'tag-description',
+  'tags-alphabetical',
+  'channels-kebab-case',
+  'no-channel-trailing-slash',
+] as const;
+
+const builtInAsync3Rules = [
+  'info-contact',
+  'info-license-strict',
+  'operation-operationId',
+  'tag-description',
+  'tags-alphabetical',
+  'channels-kebab-case',
+  'no-channel-trailing-slash',
+] as const;
 
 export type BuiltInAsync2RuleId = typeof builtInAsync2Rules[number];
 
+export type BuiltInAsync3RuleId = typeof builtInAsync3Rules[number];
+
+const builtInArazzo1Rules = [
+  'sourceDescription-type',
+  'workflowId-unique',
+  'stepId-unique',
+  'sourceDescription-name-unique',
+  'sourceDescriptions-not-empty',
+  'workflow-dependsOn',
+  'parameters-unique',
+  'step-onSuccess-unique',
+  'step-onFailure-unique',
+  'spot-supported-versions',
+  'requestBody-replacements-unique',
+  'no-criteria-xpath',
+  'criteria-unique',
+] as const;
+
+export type BuiltInArazzo1RuleId = typeof builtInArazzo1Rules[number];
+
 const builtInRules = [
-  ...builtInCommonRules,
-  ...builtInCommonOASRules,
   ...builtInOAS2Rules,
   ...builtInOAS3Rules,
   ...builtInAsync2Rules,
+  ...builtInAsync3Rules,
+  ...builtInArazzo1Rules,
+  'spec', // TODO: depricated in favor of struct
+  'struct',
 ] as const;
 
 type BuiltInRuleId = typeof builtInRules[number];
 
-const nodeTypesList = [
-  'any',
+const oas2NodeTypesList = [
+  'Root',
+  'Tag',
+  'TagList',
+  'ExternalDocs',
+  'SecurityRequirement',
+  'SecurityRequirementList',
+  'Info',
+  'Contact',
+  'License',
+  'Paths',
+  'PathItem',
+  'Parameter',
+  'ParameterList',
+  'ParameterItems',
+  'Operation',
+  'Example',
+  'ExamplesMap',
+  'Examples',
+  'Header',
+  'Responses',
+  'Response',
+  'Schema',
+  'Xml',
+  'SchemaProperties',
+  'NamedSchemas',
+  'NamedResponses',
+  'NamedParameters',
+  'NamedSecuritySchemes',
+  'SecurityScheme',
+  'TagGroup',
+  'TagGroups',
+  'EnumDescriptions',
+  'Logo',
+  'XCodeSample',
+  'XCodeSampleList',
+  'XServer',
+  'XServerList',
+] as const;
+
+export type Oas2NodeType = typeof oas2NodeTypesList[number];
+
+const oas3NodeTypesList = [
   'Root',
   'Tag',
   'TagList',
@@ -153,12 +269,33 @@ const nodeTypesList = [
   'AuthorizationCode',
   'OAuth2Flows',
   'SecurityScheme',
+  'TagGroup',
+  'TagGroups',
+  'EnumDescriptions',
+  'Logo',
   'XCodeSample',
   'XCodeSampleList',
+  'XUsePkce',
   'WebhooksMap',
-  'SpecExtension',
-  'Message',
-];
+] as const;
+
+export type Oas3NodeType = typeof oas3NodeTypesList[number];
+
+const oas3_1NodeTypesList = [
+  'Root',
+  'Schema',
+  'SchemaProperties',
+  'PatternProperties',
+  'Info',
+  'License',
+  'Components',
+  'NamedPathItems',
+  'SecurityScheme',
+  'Operation',
+  'DependentRequired',
+] as const;
+
+export type Oas3_1NodeType = typeof oas3_1NodeTypesList[number];
 
 const ConfigStyleguide: NodeType = {
   properties: {
@@ -173,35 +310,28 @@ const ConfigStyleguide: NodeType = {
     oas3_0Rules: 'Rules',
     oas3_1Rules: 'Rules',
     async2Rules: 'Rules',
+    arazzo1Rules: 'Rules',
     preprocessors: { type: 'object' },
     oas2Preprocessors: { type: 'object' },
     oas3_0Preprocessors: { type: 'object' },
     oas3_1Preprocessors: { type: 'object' },
     async2Preprocessors: { type: 'object' },
+    arazzoPreprocessors: { type: 'object' },
     decorators: { type: 'object' },
     oas2Decorators: { type: 'object' },
     oas3_0Decorators: { type: 'object' },
     oas3_1Decorators: { type: 'object' },
     async2Decorators: { type: 'object' },
+    arazzo1Decorators: { type: 'object' },
   },
 };
 
-const RootConfigStyleguide: NodeType = {
+const createConfigRoot = (nodeTypes: Record<string, NodeType>): NodeType => ({
+  ...nodeTypes.rootRedoclyConfigSchema,
   properties: {
-    plugins: {
-      type: 'array',
-      items: { type: 'string' },
-    },
+    ...nodeTypes.rootRedoclyConfigSchema.properties,
     ...ConfigStyleguide.properties,
-  },
-};
-
-const ConfigRoot: NodeType = {
-  properties: {
-    ...rootRedoclyConfigSchema.properties,
-    ...RootConfigStyleguide.properties,
-    apis: 'ConfigApis',
-    theme: 'ConfigRootTheme',
+    apis: 'ConfigApis', // Override apis with internal format
     'features.openapi': 'ConfigReferenceDocs', // deprecated
     'features.mockServer': 'ConfigMockServer', // deprecated
     organization: { type: 'string' },
@@ -220,17 +350,17 @@ const ConfigRoot: NodeType = {
       },
     },
   },
-};
+});
 
 const ConfigApis: NodeType = {
   properties: {},
   additionalProperties: 'ConfigApisProperties',
 };
 
-const ConfigApisProperties: NodeType = {
+const createConfigApisProperties = (nodeTypes: Record<string, NodeType>): NodeType => ({
+  ...nodeTypes['rootRedoclyConfigSchema.apis_additionalProperties'],
   properties: {
-    ...apiConfigSchema.properties,
-    root: { type: 'string' },
+    ...nodeTypes['rootRedoclyConfigSchema.apis_additionalProperties']?.properties,
     labels: {
       type: 'array',
       items: {
@@ -240,7 +370,6 @@ const ConfigApisProperties: NodeType = {
     ...ConfigStyleguide.properties,
     'features.openapi': 'ConfigReferenceDocs', // deprecated
     'features.mockServer': 'ConfigMockServer', // deprecated
-    theme: 'ConfigRootTheme',
     files: {
       type: 'array',
       items: {
@@ -248,8 +377,7 @@ const ConfigApisProperties: NodeType = {
       },
     },
   },
-  required: ['root'],
-};
+});
 
 const ConfigHTTP: NodeType = {
   properties: {
@@ -262,22 +390,22 @@ const ConfigHTTP: NodeType = {
   },
 };
 
-const ConfigRootTheme: NodeType = {
-  properties: {
-    ...themeConfigSchema.properties,
-    openapi: 'ConfigReferenceDocs',
-    mockServer: 'ConfigMockServer',
-  },
-};
-
 const Rules: NodeType = {
   properties: {},
   additionalProperties: (value: unknown, key: string) => {
     if (key.startsWith('rule/')) {
-      return 'Assert';
+      if (typeof value === 'string') {
+        return { enum: ['error', 'warn', 'off'] };
+      } else {
+        return 'Assert';
+      }
     } else if (key.startsWith('assert/')) {
       // keep the old assert/ prefix as an alias
-      return 'Assert';
+      if (typeof value === 'string') {
+        return { enum: ['error', 'warn', 'off'] };
+      } else {
+        return 'Assert';
+      }
     } else if (builtInRules.includes(key as BuiltInRuleId) || isCustomRuleId(key)) {
       if (typeof value === 'string') {
         return { enum: ['error', 'warn', 'off'] };
@@ -300,24 +428,34 @@ const ObjectRule: NodeType = {
   required: ['severity'],
 };
 
-const AssertionDefinitionSubject: NodeType = {
-  properties: {
-    type: { enum: nodeTypesList },
-    property: (value: unknown) => {
-      if (Array.isArray(value)) {
-        return { type: 'array', items: { type: 'string' } };
-      } else if (value === null) {
-        return null;
-      } else {
-        return { type: 'string' };
-      }
-    },
-    filterInParentKeys: { type: 'array', items: { type: 'string' } },
-    filterOutParentKeys: { type: 'array', items: { type: 'string' } },
-    matchParentKeys: { type: 'string' },
-  },
-  required: ['type'],
+// TODO: add better type tree for this
+const Schema: NodeType = {
+  properties: {},
+  additionalProperties: {},
 };
+
+function createAssertionDefinitionSubject(nodeNames: string[]): NodeType {
+  return {
+    properties: {
+      type: {
+        enum: [...new Set(['any', ...nodeNames, 'SpecExtension'])],
+      },
+      property: (value: unknown) => {
+        if (Array.isArray(value)) {
+          return { type: 'array', items: { type: 'string' } };
+        } else if (value === null) {
+          return null;
+        } else {
+          return { type: 'string' };
+        }
+      },
+      filterInParentKeys: { type: 'array', items: { type: 'string' } },
+      filterOutParentKeys: { type: 'array', items: { type: 'string' } },
+      matchParentKeys: { type: 'string' },
+    },
+    required: ['type'],
+  };
+}
 
 const AssertionDefinitionAssertions: NodeType = {
   properties: {
@@ -862,6 +1000,7 @@ const GenerateCodeSamples: NodeType = {
   required: ['languages'],
 };
 
+// TODO: deprecated
 const ConfigReferenceDocs: NodeType = {
   properties: {
     theme: 'ConfigTheme',
@@ -964,7 +1103,7 @@ const ConfigReferenceDocs: NodeType = {
     showObjectSchemaExamples: { type: 'boolean' },
     disableTryItRequestUrlEncoding: { type: 'boolean' },
     sidebarLinks: 'ConfigSidebarLinks',
-    sideNavStyle: { enum: ['summary-only', 'path-first', 'id-only'] },
+    sideNavStyle: { enum: ['summary-only', 'path-first', 'id-only', 'path-only'] },
     simpleOneOfTypeLabel: { type: 'boolean' },
     sortEnumValuesAlphabetically: { type: 'boolean' },
     sortOperationsAlphabetically: { type: 'boolean' },
@@ -985,7 +1124,7 @@ const ConfigReferenceDocs: NodeType = {
     preserveOriginalExtensionsName: { type: 'boolean' },
     markdownHeadingsAnchorLevel: { type: 'number' },
   },
-  additionalProperties: { type: 'string' },
+  additionalProperties: {},
 };
 
 const ConfigMockServer: NodeType = {
@@ -995,12 +1134,28 @@ const ConfigMockServer: NodeType = {
   },
 };
 
-export const ConfigTypes: Record<string, NodeType> = {
+export function createConfigTypes(extraSchemas: JSONSchema, config?: Config) {
+  const nodeNames = Object.values(SpecVersion).flatMap((version) => {
+    const types = config?.styleguide
+      ? config.styleguide.extendTypes(getTypes(version), version)
+      : getTypes(version);
+    return Object.keys(types);
+  });
+  // Create types based on external schemas
+  const nodeTypes = getNodeTypesFromJSONSchema('rootRedoclyConfigSchema', extraSchemas);
+
+  return {
+    ...CoreConfigTypes,
+    ConfigRoot: createConfigRoot(nodeTypes), // This is the REAL config root type
+    ConfigApisProperties: createConfigApisProperties(nodeTypes),
+    AssertionDefinitionSubject: createAssertionDefinitionSubject(nodeNames),
+    ...nodeTypes,
+  };
+}
+
+const CoreConfigTypes: Record<string, NodeType> = {
   Assert,
-  ConfigRoot,
   ConfigApis,
-  ConfigApisProperties,
-  RootConfigStyleguide,
   ConfigStyleguide,
   ConfigReferenceDocs,
   ConfigMockServer,
@@ -1010,7 +1165,6 @@ export const ConfigTypes: Record<string, NodeType> = {
   ConfigSidebarLinks,
   CommonConfigSidebarLinks,
   ConfigTheme,
-  ConfigRootTheme,
   AssertDefinition,
   ThemeColors,
   CommonThemeColors,
@@ -1046,6 +1200,7 @@ export const ConfigTypes: Record<string, NodeType> = {
   ButtonOverrides,
   Overrides,
   ObjectRule,
+  Schema,
   RightPanel,
   Rules,
   Shape,
@@ -1059,6 +1214,6 @@ export const ConfigTypes: Record<string, NodeType> = {
   Heading,
   Typography,
   AssertionDefinitionAssertions,
-  AssertionDefinitionSubject,
-  ...PortalConfigNodeTypes,
 };
+
+export const ConfigTypes: Record<string, NodeType> = createConfigTypes(rootRedoclyConfigSchema);

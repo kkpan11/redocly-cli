@@ -1,7 +1,10 @@
-import { asserts, runOnKeysSet, runOnValuesSet, Asserts } from './asserts';
+import { asserts, runOnKeysSet, runOnValuesSet } from './asserts';
 import { colorize } from '../../../logger';
 import { isRef } from '../../../ref-utils';
 import { isTruthy, keysOf, isString } from '../../../utils';
+
+import type { UserContext } from 'core/src/walk';
+import type { Asserts } from './asserts';
 import type { AssertionContext, AssertResult } from '../../../config';
 import type { Assertion, AssertionDefinition, AssertionLocators } from '.';
 import type {
@@ -10,7 +13,6 @@ import type {
   SkipFunctionContext,
   VisitFunction,
 } from '../../../visitors';
-import { UserContext } from 'core/src/walk';
 
 export type OrderDirection = 'asc' | 'desc';
 
@@ -77,13 +79,13 @@ export function getAssertsToApply(assertion: AssertionDefinition): AssertToApply
 
   if (shouldRunOnValues && !assertion.subject.property) {
     throw new Error(
-      `${shouldRunOnValues.name} can't be used on all keys. Please provide a single property`
+      `The '${shouldRunOnValues.name}' assertion can't be used on all keys. Please provide a single property.`
     );
   }
 
   if (shouldRunOnKeys && assertion.subject.property) {
     throw new Error(
-      `${shouldRunOnKeys.name} can't be used on a single property. Please use 'property'.`
+      `The '${shouldRunOnKeys.name}' assertion can't be used on properties. Please remove the 'property' key.`
     );
   }
 

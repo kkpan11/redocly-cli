@@ -1,18 +1,21 @@
 import {
-  assignExisting,
+  assignOnlyExistingConfig,
+  assignConfig,
   isDefined,
   isTruthy,
   showErrorForDeprecatedField,
   showWarningForDeprecatedField,
 } from '../utils';
 import { Config } from './config';
+import { logger, colorize } from '../logger';
+
 import type {
   Api,
   DeprecatedInApi,
   DeprecatedInRawConfig,
+  ImportedPlugin,
   FlatApi,
   FlatRawConfig,
-  Plugin,
   RawConfig,
   RawResolveConfig,
   ResolveConfig,
@@ -20,8 +23,9 @@ import type {
   RulesFields,
   StyleguideRawConfig,
   ThemeConfig,
+  Plugin,
+  PluginCreator,
 } from './types';
-import { logger, colorize } from '../logger';
 
 export function parsePresetName(presetName: string): { pluginId: string; configName: string } {
   if (presetName.indexOf('/') > -1) {
@@ -56,18 +60,24 @@ function extractFlatConfig<
   oas3_0Rules,
   oas3_1Rules,
   async2Rules,
+  async3Rules,
+  arazzo1Rules,
 
   preprocessors,
   oas2Preprocessors,
   oas3_0Preprocessors,
   oas3_1Preprocessors,
   async2Preprocessors,
+  async3Preprocessors,
+  arazzo1Preprocessors,
 
   decorators,
   oas2Decorators,
   oas3_0Decorators,
   oas3_1Decorators,
   async2Decorators,
+  async3Decorators,
+  arazzo1Decorators,
 
   ...rawConfigRest
 }: T): {
@@ -83,18 +93,24 @@ function extractFlatConfig<
     oas3_0Rules,
     oas3_1Rules,
     async2Rules,
+    async3Rules,
+    arazzo1Rules,
 
     preprocessors,
     oas2Preprocessors,
     oas3_0Preprocessors,
     oas3_1Preprocessors,
     async2Preprocessors,
+    async3Preprocessors,
+    arazzo1Preprocessors,
 
     decorators,
     oas2Decorators,
     oas3_0Decorators,
     oas3_1Decorators,
     async2Decorators,
+    async3Decorators,
+    arazzo1Decorators,
 
     doNotResolveExamples: rawConfigRest.resolve?.doNotResolveExamples,
   };
@@ -152,18 +168,24 @@ export function mergeExtends(rulesConfList: ResolvedStyleguideConfig[]) {
     oas3_0Rules: {},
     oas3_1Rules: {},
     async2Rules: {},
+    async3Rules: {},
+    arazzo1Rules: {},
 
     preprocessors: {},
     oas2Preprocessors: {},
     oas3_0Preprocessors: {},
     oas3_1Preprocessors: {},
     async2Preprocessors: {},
+    async3Preprocessors: {},
+    arazzo1Preprocessors: {},
 
     decorators: {},
     oas2Decorators: {},
     oas3_0Decorators: {},
     oas3_1Decorators: {},
     async2Decorators: {},
+    async3Decorators: {},
+    arazzo1Decorators: {},
 
     plugins: [],
     pluginPaths: [],
@@ -173,39 +195,51 @@ export function mergeExtends(rulesConfList: ResolvedStyleguideConfig[]) {
   for (const rulesConf of rulesConfList) {
     if (rulesConf.extends) {
       throw new Error(
-        `'extends' is not supported in shared configs yet: ${JSON.stringify(rulesConf, null, 2)}.`
+        `'extends' is not supported in shared configs yet:\n${JSON.stringify(rulesConf, null, 2)}`
       );
     }
 
-    Object.assign(result.rules, rulesConf.rules);
-    Object.assign(result.oas2Rules, rulesConf.oas2Rules);
-    assignExisting(result.oas2Rules, rulesConf.rules || {});
-    Object.assign(result.oas3_0Rules, rulesConf.oas3_0Rules);
-    assignExisting(result.oas3_0Rules, rulesConf.rules || {});
-    Object.assign(result.oas3_1Rules, rulesConf.oas3_1Rules);
-    assignExisting(result.oas3_1Rules, rulesConf.rules || {});
-    Object.assign(result.async2Rules, rulesConf.async2Rules);
-    assignExisting(result.async2Rules, rulesConf.rules || {});
+    assignConfig(result.rules, rulesConf.rules);
+    assignConfig(result.oas2Rules, rulesConf.oas2Rules);
+    assignOnlyExistingConfig(result.oas2Rules, rulesConf.rules);
+    assignConfig(result.oas3_0Rules, rulesConf.oas3_0Rules);
+    assignOnlyExistingConfig(result.oas3_0Rules, rulesConf.rules);
+    assignConfig(result.oas3_1Rules, rulesConf.oas3_1Rules);
+    assignOnlyExistingConfig(result.oas3_1Rules, rulesConf.rules);
+    assignConfig(result.async2Rules, rulesConf.async2Rules);
+    assignOnlyExistingConfig(result.async2Rules, rulesConf.rules);
+    assignConfig(result.async3Rules, rulesConf.async3Rules);
+    assignOnlyExistingConfig(result.async3Rules, rulesConf.rules);
+    assignConfig(result.arazzo1Rules, rulesConf.arazzo1Rules);
+    assignOnlyExistingConfig(result.arazzo1Rules, rulesConf.rules);
 
-    Object.assign(result.preprocessors, rulesConf.preprocessors);
-    Object.assign(result.oas2Preprocessors, rulesConf.oas2Preprocessors);
-    assignExisting(result.oas2Preprocessors, rulesConf.preprocessors || {});
-    Object.assign(result.oas3_0Preprocessors, rulesConf.oas3_0Preprocessors);
-    assignExisting(result.oas3_0Preprocessors, rulesConf.preprocessors || {});
-    Object.assign(result.oas3_1Preprocessors, rulesConf.oas3_1Preprocessors);
-    assignExisting(result.oas3_1Preprocessors, rulesConf.preprocessors || {});
-    Object.assign(result.async2Preprocessors, rulesConf.async2Preprocessors);
-    assignExisting(result.async2Preprocessors, rulesConf.preprocessors || {});
+    assignConfig(result.preprocessors, rulesConf.preprocessors);
+    assignConfig(result.oas2Preprocessors, rulesConf.oas2Preprocessors);
+    assignOnlyExistingConfig(result.oas2Preprocessors, rulesConf.preprocessors);
+    assignConfig(result.oas3_0Preprocessors, rulesConf.oas3_0Preprocessors);
+    assignOnlyExistingConfig(result.oas3_0Preprocessors, rulesConf.preprocessors);
+    assignConfig(result.oas3_1Preprocessors, rulesConf.oas3_1Preprocessors);
+    assignOnlyExistingConfig(result.oas3_1Preprocessors, rulesConf.preprocessors);
+    assignConfig(result.async2Preprocessors, rulesConf.async2Preprocessors);
+    assignOnlyExistingConfig(result.async2Preprocessors, rulesConf.preprocessors);
+    assignConfig(result.async3Preprocessors, rulesConf.async3Preprocessors);
+    assignOnlyExistingConfig(result.async3Preprocessors, rulesConf.preprocessors);
+    assignConfig(result.arazzo1Preprocessors, rulesConf.arazzo1Preprocessors);
+    assignOnlyExistingConfig(result.arazzo1Preprocessors, rulesConf.preprocessors);
 
-    Object.assign(result.decorators, rulesConf.decorators);
-    Object.assign(result.oas2Decorators, rulesConf.oas2Decorators);
-    assignExisting(result.oas2Decorators, rulesConf.decorators || {});
-    Object.assign(result.oas3_0Decorators, rulesConf.oas3_0Decorators);
-    assignExisting(result.oas3_0Decorators, rulesConf.decorators || {});
-    Object.assign(result.oas3_1Decorators, rulesConf.oas3_1Decorators);
-    assignExisting(result.oas3_1Decorators, rulesConf.decorators || {});
-    Object.assign(result.async2Decorators, rulesConf.async2Decorators);
-    assignExisting(result.async2Decorators, rulesConf.decorators || {});
+    assignConfig(result.decorators, rulesConf.decorators);
+    assignConfig(result.oas2Decorators, rulesConf.oas2Decorators);
+    assignOnlyExistingConfig(result.oas2Decorators, rulesConf.decorators);
+    assignConfig(result.oas3_0Decorators, rulesConf.oas3_0Decorators);
+    assignOnlyExistingConfig(result.oas3_0Decorators, rulesConf.decorators);
+    assignConfig(result.oas3_1Decorators, rulesConf.oas3_1Decorators);
+    assignOnlyExistingConfig(result.oas3_1Decorators, rulesConf.decorators);
+    assignConfig(result.async2Decorators, rulesConf.async2Decorators);
+    assignOnlyExistingConfig(result.async2Decorators, rulesConf.decorators);
+    assignConfig(result.async3Decorators, rulesConf.async3Decorators);
+    assignOnlyExistingConfig(result.async3Decorators, rulesConf.decorators);
+    assignConfig(result.arazzo1Decorators, rulesConf.arazzo1Decorators);
+    assignOnlyExistingConfig(result.arazzo1Decorators, rulesConf.decorators);
 
     result.plugins!.push(...(rulesConf.plugins || []));
     result.pluginPaths!.push(...(rulesConf.pluginPaths || []));
@@ -257,7 +291,8 @@ export function checkForDeprecatedFields(
   deprecatedField: keyof (DeprecatedInRawConfig & RawConfig),
   updatedField: keyof FlatRawConfig | undefined,
   rawConfig: DeprecatedInRawConfig & RawConfig & FlatRawConfig,
-  updatedObject: keyof FlatRawConfig | undefined
+  updatedObject: keyof FlatRawConfig | undefined,
+  link?: string | undefined
 ): void {
   const isDeprecatedFieldInApis =
     rawConfig.apis &&
@@ -267,7 +302,7 @@ export function checkForDeprecatedFields(
     );
 
   if (rawConfig[deprecatedField] && updatedField === null) {
-    showWarningForDeprecatedField(deprecatedField);
+    showWarningForDeprecatedField(deprecatedField, undefined, updatedObject, link);
   }
 
   if (rawConfig[deprecatedField] && updatedField && rawConfig[updatedField]) {
@@ -279,7 +314,7 @@ export function checkForDeprecatedFields(
   }
 
   if (rawConfig[deprecatedField] || isDeprecatedFieldInApis) {
-    showWarningForDeprecatedField(deprecatedField, updatedField, updatedObject);
+    showWarningForDeprecatedField(deprecatedField, updatedField, updatedObject, link);
   }
 }
 
@@ -289,17 +324,28 @@ export function transformConfig(
   const migratedFields: [
     keyof (DeprecatedInRawConfig & RawConfig),
     keyof FlatRawConfig | undefined,
-    keyof ThemeConfig | undefined
+    keyof ThemeConfig | undefined,
+    string | undefined
   ][] = [
-    ['apiDefinitions', 'apis', undefined],
-    ['referenceDocs', 'openapi', 'theme'],
-    ['lint', undefined, undefined],
-    ['styleguide', undefined, undefined],
-    ['features.openapi', 'openapi', 'theme'],
+    ['apiDefinitions', 'apis', undefined, undefined],
+    ['referenceDocs', 'openapi', 'theme', undefined],
+    [
+      'lint',
+      undefined,
+      undefined,
+      'https://redocly.com/docs/api-registry/guides/migration-guide-config-file/#changed-properties',
+    ],
+    [
+      'styleguide',
+      undefined,
+      undefined,
+      'https://redocly.com/docs/api-registry/guides/migration-guide-config-file/#changed-properties',
+    ],
+    ['features.openapi', 'openapi', 'theme', undefined],
   ];
 
-  for (const [deprecatedField, updatedField, updatedObject] of migratedFields) {
-    checkForDeprecatedFields(deprecatedField, updatedField, rawConfig, updatedObject);
+  for (const [deprecatedField, updatedField, updatedObject, link] of migratedFields) {
+    checkForDeprecatedFields(deprecatedField, updatedField, rawConfig, updatedObject, link);
   }
 
   const { apis, apiDefinitions, referenceDocs, lint, ...rest } = rawConfig;
@@ -364,3 +410,15 @@ export function getUniquePlugins(plugins: Plugin[]): Plugin[] {
 }
 
 export class ConfigValidationError extends Error {}
+
+export function deepCloneMapWithJSON<K, V>(originalMap: Map<K, V>): Map<K, V> {
+  return new Map(JSON.parse(JSON.stringify([...originalMap])));
+}
+
+export function isDeprecatedPluginFormat(plugin: ImportedPlugin | undefined): plugin is Plugin {
+  return plugin !== undefined && typeof plugin === 'object' && 'id' in plugin;
+}
+
+export function isCommonJsPlugin(plugin: ImportedPlugin | undefined): plugin is PluginCreator {
+  return typeof plugin === 'function';
+}

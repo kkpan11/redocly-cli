@@ -15,6 +15,7 @@ Redocly CLI supports the following linting approaches with AsyncAPI documents:
 
 - AsyncAPI document validation, including full binding validation for [supported protocols](#supported-protocols).
 - Supported versions:
+  - [AsyncAPI 3.0](https://www.asyncapi.com/docs/reference/specification/v3.0.0)
   - [AsyncAPI 2.6](https://v2.asyncapi.com/docs/reference/specification/v2.6.0)
   - earlier versions in the 2.x family may also validate successfully
 - Built-in rules for checking common standards requirements (see the [list of AsyncAPI rules](#asyncapi-rules)).
@@ -52,8 +53,8 @@ some of the built-in rules. The currently-supported rules are:
 
 - `info-contact`: the `Info` section must contain a valid `Contact` field.
 - `operation-operationId`: every operation must have a valid `operationId`.
-- `channels-kebab-case`: channel names should be `kebab-case` (lowercase with hyphens).
-- `no-channel-trailing-slash`: channel names must not have trailing slashes in their names.
+- `channels-kebab-case`: channel address should be `kebab-case` (lowercase with hyphens).
+- `no-channel-trailing-slash`: channel names must not have trailing slashes in their address.
 - `tag-description`: all tags require a description.
 - `tags-alphabetical`: tags should be listed in the AsyncAPI file in alphabetical order.
 
@@ -98,13 +99,12 @@ opportunities to make sure that your AsyncAPI spec conforms with expectations
 (we'd also love to see what you're building, it helps us know how things are
 going!).
 
-:::info Custom plugins
-
+{% admonition type="info" name="Custom plugins" %}
 For those users with advanced requirements and JavaScript skills, the [custom
 plugins](../custom-plugins/index.md) feature offers some extension points if you need
 them.
 
-:::
+{% /admonition %}
 
 ## Supported protocols
 

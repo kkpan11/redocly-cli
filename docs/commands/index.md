@@ -6,13 +6,15 @@ tocMaxDepth: 2
 
 Documentation commands:
 
+- [`preview`](preview.md) Start a local preview of a Redocly project with one of the product NPM packages.
+- [`translate`](translate.md) Generate translation keys for a Redocly Realm, Reef, or Revel project.
+- [`eject`](eject.md) Eject and modify components from the core theme in a Redocly Realm, Reef, or Revel project.
 - [`preview-docs`](preview-docs.md) Preview API reference docs for the specified API description.
 - [`build-docs`](build-docs.md) Build API description into an HTML file.
-- [`preview`](preview.md) Start a local preview of a Redocly project with one of the product NPM packages.
 
 API management commands:
 
-- [`stats`](stats.md) Gathering statistics for a document.
+- [`stats`](stats.md) Gather statistics for a document.
 - [`bundle`](bundle.md) Bundle API description.
 - [`split`](split.md) Split API description into a multi-file structure.
 - [`join`](join.md) Join API descriptions [experimental feature].
@@ -20,12 +22,23 @@ API management commands:
 Linting commands:
 
 - [`lint`](lint.md) Lint API description.
+- [`check-config`](check-config.md) Lint Redocly configuration file.
+
+{% if includes($rbac.teams, "autheticated") %}
+
+Testing commands:
+
+- [`respect`](respect.md) Execute API tests described in an Arazzo description.
+- [`generate-arazzo`](generate-arazzo.md) Generate an Arazzo description from an OpenAPI description.
+
+{% /if %}
 
 Redocly platform commands:
 
-- [`login`](login.md) Login to the Redocly API registry with an access token.
-- [`logout`](logout.md) Clear your stored credentials for the Redocly API registry.
+- [`login`](login.md) Log in to Reunite or to the Redocly API registry with an access token.
+- [`logout`](logout.md) Clear your stored credentials.
 - [`push`](push.md) Push an API description to the Redocly API registry.
+- [`push-status`](push-status.md) Track an in-progress push operation to Reunite.
 
 Supporting commands:
 
@@ -35,12 +48,12 @@ Supporting commands:
 
 There are some parameters supported by all commands:
 
-`--version` displays the current version of `redocly`.
+`--version` display the current version of `redocly`.
 
-`--help` displays the command help, or the help for the subcommand if you used one. For example:
+`--help` display the command help, or the help for the subcommand if you used one. For example:
 
 ```bash
-redocly lint --help
+npx @redocly/cli lint --help
 ```
 
 Try these with any of the other commands.
@@ -56,7 +69,7 @@ If Redocly CLI finds `redocly.yaml` in the root directory, it uses the options s
 You can also specify a config file to most commands using `--config myconfig.yaml` as part of the command. For example:
 
 ```bash
-redocly lint --config redocly-official.yaml openapi.yaml
+npx @redocly/cli lint --config redocly-official.yaml openapi.yaml
 ```
 
 For more information, refer to the [Redocly configuration file](../configuration/index.md) docs.

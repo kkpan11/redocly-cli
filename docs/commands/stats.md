@@ -2,63 +2,59 @@
 
 ## Introduction
 
-The `stats` command provides statistics about the structure of one or more API description files. Statistics are calculated using the counting logic from the `StatsVisitor` module. The `stats` command can generate statistics for the following metrics:
+The `stats` command provides statistics about the structure of one or more API description files.
+This command generates statistics for the following metrics:
 
-- `References`
-- `External Documents`
-- `Schemas`
-- `Parameters`
-- `Links`
-- `Path Items`
-- `Operations`
-- `Tags`
+- References
+- External Documents
+- Schemas
+- Parameters
+- Links
+- Path Items
+- Operations
+- Tags
+
+If you're interested in the technical details, the statistics are calculated using the counting logic from the `StatsVisitor` module.
 
 ## Usage
 
 ```bash
 redocly stats <api>
-redocly stats <api> [--format] [--config=<path>]
+redocly stats <api> [--format=<option>] [--config=<path>]
 redocly stats --version
 ```
 
 ## Options
 
-| Option        | Type    | Description                                                                                                                        |
-| ------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| api           | string  | **REQUIRED.** Path to the API description file that you want to split into a multi-file structure.                                 |
-| --config      | string  | Specify path to the [configuration file](#custom-configuration-file).                                                              |
-| --format      | string  | Format for the output.<br />**Possible values:** `stylish`, `json`.                                                                |
-| --help        | boolean | Show help.                                                                                                                         |
-| --lint-config | string  | Specify the severity level for the configuration file. <br/> **Possible values:** `warn`, `error`, `off`. Default value is `warn`. |
-| --version     | boolean | Show version number.                                                                                                               |
+| Option        | Type    | Description                                                                                                                                                          |
+| ------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| api           | string  | **REQUIRED.** Path to the API description filename or alias that you want to generate the statistics for. Refer to [the API section](#specify-api) for more details. |
+| --config      | string  | Specify path to the [configuration file](#use-alternative-configuration-file).                                                                                       |
+| --format      | string  | Format for the output.<br />**Possible values:** `stylish`, `json`, `markdown`. Default value is `stylish`.                                                          |
+| --help        | boolean | Show help.                                                                                                                                                           |
+| --lint-config | string  | Specify the severity level for the configuration file. <br/> **Possible values:** `warn`, `error`, `off`. Default value is `warn`.                                   |
+| --version     | boolean | Show version number.                                                                                                                                                 |
 
 ## Examples
 
-### Api
+### Specify API
 
-The `stats` command behaves differently depending on how you pass the api to it and whether the [configuration file](#custom-configuration-file) exists.
+The `stats` command behaves differently depending on how you pass the API to it, and whether the [configuration file](#use-alternative-configuration-file) exists.
 
-#### Pass api directly
+#### Pass an API directly
+
+You can use the `stats` command with an OpenAPI description directly, with a command like the following:
 
 ```bash
 redocly stats openapi/openapi.yaml
 ```
 
-In this case, `stats` shows statistics for the API description that was passed to the command. The configuration file is ignored.
+In this case, `stats` shows statistics for the API description that was passed in.
 
-#### Pass api via configuration file
+#### Pass an API alias
 
-Instead of full paths, you can use API names from the `apis` section of your Redocly configuration file.
-
-{% tabs %}
-{% tab label="Command" %}
-
-```bash
-redocly stats core@v1
-```
-
-{% /tab  %}
-{% tab label="Configuration file" %}
+Instead of a full path, you can use an API name from the `apis` section of your Redocly configuration file.
+For example, with a `redocly.yaml` configuration file containing the following entry for `core@v1`:
 
 ```yaml
 apis:
@@ -66,12 +62,15 @@ apis:
     root: ./openapi/api-description.json
 ```
 
-{% /tab  %}
-{% /tabs  %}
+You can obtain the statistics by giving the API alias name, as shown below:
 
-In this case, after resolving the path behind the `core@v1` name (see the `Configuration file` tab), `stats` displays statistics for the `api-description.json` file. The presence of the Redocly configuration file is mandatory.
+```bash
+redocly stats core@v1
+```
 
-### Custom configuration file
+In this case, after resolving the path behind the `core@v1` name, `stats` displays statistics for the `openapi/api-description.json` file. For this approach, the Redocly configuration file is mandatory.
+
+### Use alternative configuration file
 
 By default, the CLI tool looks for the [Redocly configuration file](../configuration/index.md) in the current working directory. Use the optional `--config` argument to provide an alternative path to a configuration file.
 
@@ -79,58 +78,40 @@ By default, the CLI tool looks for the [Redocly configuration file](../configura
 redocly stats --config=./another/directory/config.yaml
 ```
 
-### Format
+### Specify output format
 
-#### Stylish (default)
+#### Specify the stylish (default) output format
 
-{% tabs %}
-{% tab label="Request" %}
+The default output format for `stats` is called "stylish".
+It outputs a nice format for your terminal, as shown in the following example:
 
-```bash
-redocly stats pet.yaml
-```
+<pre>
+Document: museum.yaml stats:
 
-{% /tab  %}
-{% tab label="Output" %}
-
-```bash
-Document: pet.yaml stats:
-
-🚗 References: 3
+🚗 References: 35
 📦 External Documents: 0
-📈 Schemas: 3
-👉 Parameters: 2
+📈 Schemas: 23
+👉 Parameters: 6
 🔗 Links: 0
-➡️ Path Items: 2
-👷 Operations: 3
-🔖 Tags: 1
+🔀 Path Items: 5
+👷 Operations: 8
+🔖 Tags: 3
 
-pet.yaml: stats processed in 6ms
-```
+museum.yaml: stats processed in 4ms
+</pre>
 
-{% /tab  %}
-{% /tabs  %}
-In this format, `stats` shows the statistics for the metrics mentioned in the [Introduction section](#introduction) in condensed output with colored text and an icon at the beginning of each line.
+In this format, `stats` shows the statistics in a condensed but readable manner with an icon at the beginning of each line.
 
-#### JSON
+#### Specify the JSON output format
 
-{% tabs %}
-{% tab label="Command" %}
+Use `--format=json` to get a machine-readable output format.
+The JSON format output is shown in the following example:
 
-```bash
-redocly stats pet.yaml --format=json
-```
-
-{% /tab  %}
-{% tab label="Output" %}
-
-```bash Output
-Document: pet.yaml stats:
-
+<pre>
 {
   "refs": {
     "metric": "🚗 References",
-    "total": 3
+    "total": 35
   },
   "externalDocs": {
     "metric": "📦 External Documents",
@@ -138,32 +119,91 @@ Document: pet.yaml stats:
   },
   "schemas": {
     "metric": "📈 Schemas",
-    "total": 3
+    "total": 23
   },
   "parameters": {
     "metric": "👉 Parameters",
-    "total": 2
+    "total": 6
   },
   "links": {
     "metric": "🔗 Links",
     "total": 0
   },
   "pathItems": {
-    "metric": "➡️ Path Items",
-    "total": 2
+    "metric": "🔀 Path Items",
+    "total": 5
   },
   "operations": {
     "metric": "👷 Operations",
-    "total": 3
+    "total": 8
   },
   "tags": {
     "metric": "🔖 Tags",
-    "total": 1
+    "total": 3
   }
 }
-pet.yaml: stats processed in 6ms
+</pre>
+
+The JSON format output is suitable when you want to use the stats data in another program.
+
+#### Specify the Markdown output format
+
+Use `--format=markdown` to return output that you can use in Markdown files or other Markdown-friendly applications.
+A table format is used.
+
+The following is an example source output:
+
+<pre>
+| Feature  | Count  |
+| --- | --- |
+| 🚗 References | 35 |
+| 📦 External Documents | 0 |
+| 📈 Schemas | 23 |
+| 👉 Parameters | 6 |
+| 🔗 Links | 0 |
+| 🔀 Path Items | 5 |
+| 👷 Operations | 8 |
+| 🔖 Tags | 3 |
+
+</pre>
+
+Here's the rendered example source output:
+
+| Feature               | Count |
+| --------------------- | ----- |
+| 🚗 References         | 35    |
+| 📦 External Documents | 0     |
+| 📈 Schemas            | 23    |
+| 👉 Parameters         | 6     |
+| 🔗 Links              | 0     |
+| 🔀 Path Items         | 5     |
+| 👷 Operations         | 8     |
+| 🔖 Tags               | 3     |
+
+The Markdown format is suitable when a printable summary is needed, such as for regularly updated reports or human-readable output from your CI system.
+
+The following example shows how to use the `stats` command in a GitHub action to make a [GitHub summary](https://github.blog/2022-05-09-supercharging-github-actions-with-job-summaries/):
+
+```yaml
+name: Get API stats
+on: push
+
+jobs:
+  get_stats:
+    name: Stats as a job summary
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo's default branch
+        uses: actions/checkout@v4
+      - name: Set up node
+        uses: actions/setup-node@v4
+      - name: Install Redocly CLI
+        run: npm install -g @redocly/cli@latest
+      - name: Get stats
+        run: redocly stats --format=markdown museum.yaml >> $GITHUB_STEP_SUMMARY 2>&1
 ```
 
-{% /tab  %}
-{% /tabs  %}
-In this format, `stats` shows the statistics for the metrics mentioned in the [Introduction section](#introduction) in JSON-like output.
+This GitHub action uses the output of the `stats` command in Markdown format as the input value for `$GITHUB_STEP_SUMMARY`.
+When the job is complete, your API stats are added to the summary page, as shown in the following screenshot:
+
+![GitHub job summary showing API stats](./images/stats-github-job-summary.png)

@@ -31,11 +31,12 @@ Before submitting a pull request, please make sure the following is done:
 1. If you’ve fixed a bug or added code that should be tested, don't forget to add [tests](#tests)!
 1. Ensure the test suite passes (see the [Tests section](#tests) for more details).
 1. Format your code with prettier (`npm run prettier`).
-1. Each feat/fix PR should also contain a changeset (to create one, run `npx changeset`; if your changes are scoped to `packages/core` but also affect Redocly CLI behavior, please include the `@redocly/cli` package as well). Please describe what you've done in this PR using sentence case (you can refer to our [changelog](https://redocly.com/docs/cli/changelog/)). This produces a file in `.changeset` folder. Please commit this file along with your changes. If the PR doesn't need a changeset (for example, it is a small change, or updates only documentation), add the 'No Changeset Needed' label to the PR.
+1. Each feat/fix PR should also contain a changeset (to create one, run `npx changeset`; if your changes are scoped to `packages/core` but also affect Redocly CLI behavior, please include the `@redocly/cli` package as well). Please describe what you've done in this PR using sentence case (you can refer to our [changelog](https://redocly.com/docs/cli/changelog/)). This produces a file in `.changeset` folder. Please commit this file along with your changes. If the PR doesn't need a changeset (for example, it is a small change, or updates only documentation), add the 'no changeset needed' label to the PR.
+1. When merging a PR, make sure to remove all redundant commit information (like intermediate commit descriptions). Please leave only the main commit description (plus co-authors if needed). If you think it makes sense to keep several commit descriptions, please rebase your PR instead of squashing it to preserve the commits. Please use the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) format.
 
 ## Development setup
 
-[Node.js](http://nodejs.org) at v14.19.0+ and NPM v7.0.0+ are required.
+[Node.js](http://nodejs.org) at v18.17.0+ and NPM v10.8.2+ are required.
 
 After forking the repo, run:
 
@@ -47,7 +48,7 @@ npm install # or npm i
 
 To compile the code, run `npm run compile`. To do that on the fly, run `npm run watch` in a separate thread.
 
-To run a specific CLI command, use `npm run cli`, e.g. `npm run cli -- lint openapi.yaml --format=stylish`. Please notice that the extra `--` is required to pass arguments to the CLI rather than the NPM itself.
+To run a specific CLI command, use `npm run cli`, e.g. `npm run cli -- lint resources/museum.yaml --format=stylish`. Please notice that the extra `--` is required to pass arguments to the CLI rather than to NPM itself.
 
 Format your code with `npm run prettier` before committing.
 
@@ -56,6 +57,8 @@ Please check the [Tests section](#tests) for the test commands reference.
 There are some other scripts available in the `scripts` section of the `package.json` file.
 
 ## Local source code usage
+
+There are two options for testing local changes in other local applications: NPM linking and local packing and installing from the `redocly-cli.tgz` file.
 
 ### NPM linking
 
@@ -77,11 +80,17 @@ Don't forget to revert the changes to **package.json** files later.
 
 Additions and updates to our documentation are very welcome. You can find the documentation in the `docs/` folder, and this is published to https://redocly.com/docs/cli/ as part of our main website.
 
-To preview your changes locally, run this command from the `docs/` folder:
+To preview your documentation changes locally:
+
+1. Make sure `redocly` is already installed on your local computer. See [installation](https://redocly.com/docs/cli/installation/).
+
+2. Run this command from the `docs/` folder:
 
 ```bash
-https://redocly.com/docs/cli/
+redocly preview
 ```
+
+By default, you can access the docs preview at http://localhost:4000 or http://127.0.0.1:4000.
 
 > Please note that currently the custom markdoc tags used in the main website are not available in the local preview version, and links that point to the wider website do show as errors when using a local platform. The pull request workflows generate a full preview, so rest assured that you are able to check everything is in good shape before we review and merge your changes.
 
@@ -113,8 +122,8 @@ It only checks links within the local docs (it can't check links to other docs s
 
 ## Built-in rules changes
 
-After adding a new rule, make sure it is added to the `minimal`, `recommended` and `all` rulesets with appropriate severity levels. The defaults are `off` for `minimal` and `recommended` and `error` for `all`.
-Also add the rule to the `builtInRulesList` in [the config types tree](../packages/core/src/types/redocly-yaml.ts).
+After adding a new rule, make sure it is added to the `minimal`, `recommended`, `recommended-strict` (the same as the previous but with warnings turned into error) and `all` rulesets with appropriate severity levels. The defaults are `off` for `minimal` and `recommended` and `error` for `all`.
+Also add the rule to the built-in rules list in [the config types tree](./packages/core/src/types/redocly-yaml.ts).
 
 Separately, open a merge request with the corresponding documentation changes.
 
@@ -140,21 +149,26 @@ The **redocly.yaml** file is the most flexible way of providing arguments. Pleas
 
 The application maintains the following exit codes.
 
-| Exit code | Description              |
-| --------- | ------------------------ |
-| 0         | Success                  |
-| 1         | Command execution error  |
-| 2         | Config resolving failure |
+| Exit code | Description               |
+| --------- | ------------------------- |
+| 0         | Success                   |
+| 1         | Command execution error   |
+| 2         | Config resolution failure |
 
 ## Tests
 
+When running tests, make sure the code is compiled (`npm run compile` or `npm run watch`).
+Having `redocly.yaml` in the root of the project affects the unit tests, and console logs affect the e2e tests, so make sure to get rid of both before running tests.
+
 ### Unit tests
 
-Run unit tests with this command: `npm run test`.
+Run unit tests with this command: `npm run unit`.
 
 Unit tests in the **cli** package are sensitive to top-level configuration file (**redocly.yaml**).
 
 To run a specific test, use this command: `npm run unit -- -t 'Test name'`.
+To run tests in watch mode, run: `npm run unit:watch`
+To run single file in watch mode, run: `npm run unit:watch -- <path/to/your/file.test.ts>`
 To update snapshots, run `npm run unit -- -u`.
 
 To get coverage per package run `npm run coverage:cli` or `npm run coverage:core`.
@@ -175,7 +189,7 @@ If you made any changes, make sure to compile the code before running the tests.
 
 - **`__tests__`**: contains e2e tests. The e2e tests are written and run with [Jest](https://jestjs.io/).
 
-- **`docs`**: contains the documentation source files. When changes to the documentation are merged, they automatically get published on the [Redocly docs website](https://redoc.ly/docs/cli/).
+- **`docs`**: contains the documentation source files. When changes to the documentation are merged, they automatically get published on the [Redocly docs website](https://redocly.com/docs/cli/).
 
 - **`packages`**: contains the source code. Сonsists of two packages - CLI and core. The codebase is written in Typescript.
 
@@ -211,3 +225,21 @@ We use [Changesets](https://github.com/changesets/changesets) flow.
 After merging a PR with a changeset, the release PR is automatically created.
 
 If the pipelines are not starting, close and reopen the PR. Merging that PR triggers the release process.
+
+### Revert a release
+
+There's no possibility to revert a release itself.
+However, you can release a new version with a problematic commit reverted.
+Create a new branch from **main**, then find the hash of the commit you want to revert and run `git revert <commit-hash>`.
+Create a patch-level changeset for the revert and open a PR with it.
+Merge the PR and cut a release according to the [Release flow](#release-flow).
+
+### Snapshot release
+
+To release an experimental version to the **NPM** registry, follow these steps:
+
+1. Create a new PR to **main**.
+2. Add the `snapshot` label to the PR. This creates a new PR with to the `snapshot` branch (which is a copy of the `main` branch).
+3. Merging the second PR triggers release to the **NPM** registry under the `snapshot` tag.
+
+The released version can be installed with `npm install @redocly/cli@snapshot`.

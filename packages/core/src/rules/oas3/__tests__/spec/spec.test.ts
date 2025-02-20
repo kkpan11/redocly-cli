@@ -5,10 +5,19 @@ import { StyleguideConfig, defaultPlugin, resolvePlugins, resolvePreset } from '
 
 import { BaseResolver } from '../../../../resolve';
 
-const plugins = resolvePlugins([defaultPlugin]);
-const pressets = resolvePreset('all', plugins);
-const allConfig = new StyleguideConfig({ ...pressets, plugins });
+import type { Plugin, ResolvedStyleguideConfig } from '../../../../config';
+
 describe('Oas3 Structural visitor basic', () => {
+  let plugins: Plugin[];
+  let presets: ResolvedStyleguideConfig;
+  let allConfig: StyleguideConfig;
+
+  beforeAll(async () => {
+    plugins = await resolvePlugins([defaultPlugin]);
+    presets = resolvePreset('all', plugins);
+    allConfig = new StyleguideConfig({ ...presets, plugins });
+  });
+
   it('should report wrong types', async () => {
     const document = parseYamlToDocument(
       outdent`
@@ -56,7 +65,7 @@ describe('Oas3 Structural visitor basic', () => {
             },
           ],
           "message": "Expected type \`string\` but got \`array\`.",
-          "ruleId": "spec",
+          "ruleId": "struct",
           "severity": "error",
           "suggest": [],
         },
@@ -70,7 +79,7 @@ describe('Oas3 Structural visitor basic', () => {
             },
           ],
           "message": "Expected type \`string\` but got \`boolean\`.",
-          "ruleId": "spec",
+          "ruleId": "struct",
           "severity": "error",
           "suggest": [],
         },
@@ -84,7 +93,7 @@ describe('Oas3 Structural visitor basic', () => {
             },
           ],
           "message": "Expected type \`License\` (object) but got \`string\`",
-          "ruleId": "spec",
+          "ruleId": "struct",
           "severity": "error",
           "suggest": [],
         },
@@ -115,7 +124,7 @@ describe('Oas3 Structural visitor basic', () => {
             },
           ],
           "message": "Expected type \`string\` but got \`integer\`.",
-          "ruleId": "spec",
+          "ruleId": "struct",
           "severity": "error",
           "suggest": [],
         },
@@ -129,7 +138,7 @@ describe('Oas3 Structural visitor basic', () => {
             },
           ],
           "message": "Expected type \`Tag\` (object) but got \`number\`",
-          "ruleId": "spec",
+          "ruleId": "struct",
           "severity": "error",
           "suggest": [],
         },
@@ -143,7 +152,7 @@ describe('Oas3 Structural visitor basic', () => {
             },
           ],
           "message": "Expected type \`Tag\` (object) but got \`string\`",
-          "ruleId": "spec",
+          "ruleId": "struct",
           "severity": "error",
           "suggest": [],
         },
@@ -190,7 +199,7 @@ describe('Oas3 Structural visitor basic', () => {
             },
           ],
           "message": "Property \`components1\` is not expected here.",
-          "ruleId": "spec",
+          "ruleId": "struct",
           "severity": "error",
           "suggest": [
             "components",
@@ -219,7 +228,7 @@ describe('Oas3 Structural visitor basic', () => {
             },
           ],
           "message": "Property \`test\` is not expected here.",
-          "ruleId": "spec",
+          "ruleId": "struct",
           "severity": "error",
           "suggest": [],
         },
@@ -261,7 +270,7 @@ describe('Oas3 Structural visitor basic', () => {
             },
           ],
           "message": "The field \`paths\` must be present on this level.",
-          "ruleId": "spec",
+          "ruleId": "struct",
           "severity": "error",
           "suggest": [],
         },
@@ -288,7 +297,7 @@ describe('Oas3 Structural visitor basic', () => {
             },
           ],
           "message": "The field \`title\` must be present on this level.",
-          "ruleId": "spec",
+          "ruleId": "struct",
           "severity": "error",
           "suggest": [],
         },

@@ -1,14 +1,19 @@
-import { Source } from './resolve';
-import { OasRef } from './typings/openapi';
-import { isTruthy } from './utils';
+import { isPlainObject, isTruthy } from './utils';
+
+import type { Source } from './resolve';
+import type { OasRef } from './typings/openapi';
 
 export function joinPointer(base: string, key: string | number) {
   if (base === '') base = '#/';
   return base[base.length - 1] === '/' ? base + key : base + '/' + key;
 }
 
-export function isRef(node: any): node is OasRef {
-  return node && typeof node.$ref === 'string';
+export function isRef(node: unknown): node is OasRef {
+  return isPlainObject(node) && typeof node.$ref === 'string';
+}
+
+export function isExternalValue(node: unknown) {
+  return isPlainObject(node) && typeof node.externalValue === 'string';
 }
 
 export class Location {
@@ -43,9 +48,9 @@ export function escapePointer<T extends string | number>(fragment: T): T {
 }
 
 export function parseRef(ref: string): { uri: string | null; pointer: string[] } {
-  const [uri, pointer = ''] = ref.split('#');
+  const [uri, pointer = ''] = ref.split('#/');
   return {
-    uri: uri || null,
+    uri: (uri.endsWith('#') ? uri.slice(0, -1) : uri) || null,
     pointer: parsePointer(pointer),
   };
 }
@@ -60,6 +65,7 @@ export function pointerBaseName(pointer: string) {
 }
 
 export function refBaseName(ref: string) {
+  // eslint-disable-next-line no-useless-escape
   const parts = ref.split(/[\/\\]/); // split by '\' and '/'
   return parts[parts.length - 1].replace(/\.[^.]+$/, ''); // replace extension with empty string
 }

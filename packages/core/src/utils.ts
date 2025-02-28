@@ -1,13 +1,14 @@
 import * as fs from 'fs';
 import { extname } from 'path';
 import * as minimatch from 'minimatch';
-import fetch from 'node-fetch';
-import * as pluralize from 'pluralize';
 import { parseYaml } from './js-yaml';
-import { UserContext } from './walk';
-import { HttpResolveConfig } from './config';
 import { env } from './env';
 import { logger, colorize } from './logger';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+import * as pluralizeOne from 'pluralize';
+
+import type { HttpResolveConfig } from './config';
+import type { UserContext } from './walk';
 
 export { parseYaml, stringifyYaml } from './js-yaml';
 
@@ -20,6 +21,13 @@ export type Stack<T> = StackFrame<T> | null;
 export type StackNonEmpty<T> = StackFrame<T>;
 export function pushStack<T, P extends Stack<T> = Stack<T>>(head: P, value: T) {
   return { prev: head, value };
+}
+
+export function pluralize(sentence: string, count?: number, inclusive?: boolean) {
+  return sentence
+    .split(' ')
+    .map((word) => pluralizeOne(word, count, inclusive))
+    .join(' ');
 }
 
 export function popStack<T, P extends Stack<T>>(head: P) {
@@ -37,16 +45,24 @@ export function isDefined<T>(x: T | undefined): x is T {
   return x !== undefined;
 }
 
-export function isPlainObject(value: any): value is object {
+export function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-export function isEmptyObject(value: any): value is object {
+export function isEmptyObject(value: unknown): value is Record<string, unknown> {
   return isPlainObject(value) && Object.keys(value).length === 0;
 }
 
-export function isEmptyArray(value: any) {
+export function isNotEmptyObject(obj: unknown): boolean {
+  return isPlainObject(obj) && !isEmptyObject(obj);
+}
+
+export function isEmptyArray(value: unknown) {
   return Array.isArray(value) && value.length === 0;
+}
+
+export function isNotEmptyArray<T>(args?: T[]): boolean {
+  return !!args && Array.isArray(args) && !!args.length;
 }
 
 export async function readFileFromUrl(url: string, config: HttpResolveConfig) {
@@ -145,10 +161,6 @@ export function validateMimeTypeOAS3(
   }
 }
 
-export function isSingular(path: string) {
-  return pluralize.isSingular(path);
-}
-
 export function readFileAsStringSync(filePath: string) {
   return fs.readFileSync(filePath, 'utf-8');
 }
@@ -174,10 +186,6 @@ export function slash(path: string): string {
   return path.replace(/\\/g, '/');
 }
 
-export function isNotEmptyObject(obj: any) {
-  return !!obj && Object.keys(obj).length > 0;
-}
-
 // TODO: use it everywhere
 export function isString(value: unknown): value is string {
   return typeof value === 'string';
@@ -187,9 +195,30 @@ export function isNotString<T>(value: string | T): value is T {
   return !isString(value);
 }
 
-export function assignExisting<T>(target: Record<string, T>, obj: Record<string, T>) {
+export const assignConfig = <T extends string | { severity?: string }>(
+  target: Record<string, T>,
+  obj?: Record<string, T>
+) => {
+  if (!obj) return;
   for (const k of Object.keys(obj)) {
-    if (target.hasOwnProperty(k)) {
+    if (isPlainObject(target[k]) && typeof obj[k] === 'string') {
+      target[k].severity = obj[k];
+    } else {
+      target[k] = obj[k];
+    }
+  }
+};
+
+export function assignOnlyExistingConfig<T extends string | { severity?: string }>(
+  target: Record<string, T>,
+  obj?: Record<string, T>
+) {
+  if (!obj) return;
+  for (const k of Object.keys(obj)) {
+    if (!target.hasOwnProperty(k)) continue;
+    if (isPlainObject(target[k]) && typeof obj[k] === 'string') {
+      target[k].severity = obj[k];
+    } else {
       target[k] = obj[k];
     }
   }
@@ -206,7 +235,7 @@ export function isCustomRuleId(id: string) {
 export function doesYamlFileExist(filePath: string): boolean {
   return (
     (extname(filePath) === '.yaml' || extname(filePath) === '.yml') &&
-    fs.hasOwnProperty('existsSync') &&
+    fs?.hasOwnProperty?.('existsSync') &&
     fs.existsSync(filePath)
   );
 }
@@ -214,14 +243,16 @@ export function doesYamlFileExist(filePath: string): boolean {
 export function showWarningForDeprecatedField(
   deprecatedField: string,
   updatedField?: string,
-  updatedObject?: string
+  updatedObject?: string,
+  link?: string
 ) {
+  const readMoreText = link ? `Read more about this change: ${link}` : '';
   logger.warn(
     `The '${colorize.red(deprecatedField)}' field is deprecated. ${
       updatedField
         ? `Use ${colorize.green(getUpdatedFieldName(updatedField, updatedObject))} instead. `
         : ''
-    }Read more about this change: https://redocly.com/docs/api-registry/guides/migration-guide-config-file/#changed-properties\n`
+    }${readMoreText}\n`
   );
 }
 
@@ -266,11 +297,61 @@ export function pickDefined<T extends Record<string, unknown>>(
 }
 
 export function nextTick() {
-  new Promise((resolve) => {
+  return new Promise((resolve) => {
     setTimeout(resolve);
   });
+}
+
+export async function pause(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function getUpdatedFieldName(updatedField: string, updatedObject?: string) {
   return `${typeof updatedObject !== 'undefined' ? `${updatedObject}.` : ''}${updatedField}`;
 }
+
+export function getProxyAgent() {
+  const proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+  return proxy ? new HttpsProxyAgent(proxy) : undefined;
+}
+
+/**
+ * Checks if two objects are deeply equal.
+ * Borrowed the source code from https://github.com/lukeed/dequal.
+ */
+export function dequal(foo: any, bar: any): boolean {
+  let ctor, len;
+  if (foo === bar) return true;
+
+  if (foo && bar && (ctor = foo.constructor) === bar.constructor) {
+    if (ctor === Date) return foo.getTime() === bar.getTime();
+    if (ctor === RegExp) return foo.toString() === bar.toString();
+
+    if (ctor === Array) {
+      if ((len = foo.length) === bar.length) {
+        while (len-- && dequal(foo[len], bar[len]));
+      }
+      return len === -1;
+    }
+
+    if (!ctor || typeof foo === 'object') {
+      len = 0;
+      for (ctor in foo) {
+        if (
+          Object.prototype.hasOwnProperty.call(foo, ctor) &&
+          ++len &&
+          !Object.prototype.hasOwnProperty.call(bar, ctor)
+        )
+          return false;
+        if (!(ctor in bar) || !dequal(foo[ctor], bar[ctor])) return false;
+      }
+      return Object.keys(bar).length === len;
+    }
+  }
+
+  return foo !== foo && bar !== bar;
+}
+
+export type CollectFn = (value: unknown) => void;
+
+export type StrictObject<T extends object> = T & { [key: string]: undefined };

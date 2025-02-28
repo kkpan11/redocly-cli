@@ -6,7 +6,7 @@ tocMaxDepth: 3
 
 ## Overview
 
-This guide describes how to ensure that the API operation's response [contains a specific property](../rules/response-contains-property.md)
+This guide describes how to ensure that the API operation's response [contains a specific property](../rules/oas/response-contains-property.md)
 with three different cases:
 
 1. Single response containing one property
@@ -35,13 +35,13 @@ Let's get started!
         └── users_{username}.yaml
 ```
 
-{% admonition type="note" %}
+{% admonition type="info" %}
 Make sure that the @redocly/cli has version `1.0.0-beta.99` or later
 {% /admonition %}
 
-- If you're using VS Code as your favorite code editor, we recommend you install the [Redocly OpenAPI VS Code extension](../../redocly-openapi/index.md).
+- If you're using VS Code as your favorite code editor, we recommend you install the [Redocly OpenAPI VS Code extension](https://redocly.com/docs/redocly-openapi/).
 
-{% admonition type="note" name="We do, You do" %}
+{% admonition type="info" name="We do, You do" %}
 This guide is most effective when you follow along and complete the steps.
 {% /admonition %}
 

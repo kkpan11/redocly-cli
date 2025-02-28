@@ -6,7 +6,13 @@ StyleguideConfig {
   "_usedVersions": Set {},
   "configFile": undefined,
   "decorators": {
+    "arazzo1": {},
     "async2": {
+      "oas2": {},
+      "oas3_0": {},
+      "oas3_1": {},
+    },
+    "async3": {
       "oas2": {},
       "oas3_0": {},
       "oas3_1": {},
@@ -44,7 +50,13 @@ StyleguideConfig {
   "pluginPaths": [],
   "plugins": [],
   "preprocessors": {
+    "arazzo1": {},
     "async2": {
+      "oas2": {},
+      "oas3_0": {},
+      "oas3_1": {},
+    },
+    "async3": {
       "oas2": {},
       "oas3_0": {},
       "oas3_1": {},
@@ -107,7 +119,35 @@ StyleguideConfig {
   },
   "recommendedFallback": false,
   "rules": {
+    "arazzo1": {
+      "oas2": {
+        "no-empty-servers": "error",
+        "operation-summary": "error",
+      },
+      "oas3_0": {
+        "no-empty-servers": "error",
+        "operation-summary": "error",
+      },
+      "oas3_1": {
+        "no-empty-servers": "error",
+        "operation-summary": "error",
+      },
+    },
     "async2": {
+      "oas2": {
+        "no-empty-servers": "error",
+        "operation-summary": "error",
+      },
+      "oas3_0": {
+        "no-empty-servers": "error",
+        "operation-summary": "error",
+      },
+      "oas3_1": {
+        "no-empty-servers": "error",
+        "operation-summary": "error",
+      },
+    },
+    "async3": {
       "oas2": {
         "no-empty-servers": "error",
         "operation-summary": "error",

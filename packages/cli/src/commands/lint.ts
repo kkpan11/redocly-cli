@@ -1,5 +1,6 @@
+import { blue, gray } from 'colorette';
+import { performance } from 'perf_hooks';
 import {
-  Config,
   formatProblems,
   getMergedConfig,
   getTotals,
@@ -7,39 +8,46 @@ import {
   lintConfig,
 } from '@redocly/openapi-core';
 import { ConfigValidationError } from '@redocly/openapi-core/lib/config';
+import { pluralize } from '@redocly/openapi-core/lib/utils';
 import {
   checkIfRulesetExist,
   exitWithError,
+  formatPath,
   getExecutionTime,
   getFallbackApisOrExit,
   handleError,
-  pluralize,
+  notifyAboutIncompatibleConfigOptions,
   printConfigLintTotals,
   printLintTotals,
   printUnusedWarnings,
 } from '../utils/miscellaneous';
-import { blue, gray } from 'colorette';
-import { performance } from 'perf_hooks';
+import { getCommandNameFromArgs } from '../utils/getCommandNameFromArgs';
 
-import type { OutputFormat, ProblemSeverity, Document, RuleSeverity } from '@redocly/openapi-core';
-import type { ResolvedRefMap } from '@redocly/openapi-core/lib/resolve';
-import type { CommandOptions, Skips, Totals } from '../types';
+import type { Arguments } from 'yargs';
+import type { OutputFormat, ProblemSeverity } from '@redocly/openapi-core';
+import type { RawConfigProcessor } from '@redocly/openapi-core/lib/config';
+import type { CommandOptions, Skips, Totals, VerifyConfigOptions } from '../types';
+import type { CommandArgs } from '../wrapper';
 
 export type LintOptions = {
   apis?: string[];
   'max-problems': number;
   extends?: string[];
-  config?: string;
   format: OutputFormat;
   'generate-ignore-file'?: boolean;
-  'lint-config'?: RuleSeverity;
-} & Omit<Skips, 'skip-decorator'>;
+} & Omit<Skips, 'skip-decorator'> &
+  VerifyConfigOptions;
 
-export async function handleLint(argv: LintOptions, config: Config, version: string) {
+export async function handleLint({
+  argv,
+  config,
+  version,
+  collectSpecData,
+}: CommandArgs<LintOptions>) {
   const apis = await getFallbackApisOrExit(argv.apis, config);
 
   if (!apis.length) {
-    exitWithError('No APIs were provided');
+    exitWithError('No APIs were provided.');
   }
 
   if (argv['generate-ignore-file']) {
@@ -67,10 +75,11 @@ export async function handleLint(argv: LintOptions, config: Config, version: str
           )} configuration by default.\n\n`
         );
       }
-      process.stderr.write(gray(`validating ${path.replace(process.cwd(), '')}...\n`));
+      process.stderr.write(gray(`validating ${formatPath(path)}...\n`));
       const results = await lint({
         ref: path,
         config: resolvedConfig,
+        collectSpecData,
       });
 
       const fileTotals = getTotals(results);
@@ -93,7 +102,7 @@ export async function handleLint(argv: LintOptions, config: Config, version: str
       }
 
       const elapsed = getExecutionTime(startedAt);
-      process.stderr.write(gray(`${path.replace(process.cwd(), '')}: validated in ${elapsed}\n\n`));
+      process.stderr.write(gray(`${formatPath(path)}: validated in ${elapsed}\n\n`));
     } catch (e) {
       handleError(e, path);
     }
@@ -118,7 +127,7 @@ export async function handleLint(argv: LintOptions, config: Config, version: str
 export function lintConfigCallback(
   argv: CommandOptions & Record<string, undefined>,
   version: string
-) {
+): RawConfigProcessor | undefined {
   if (argv['lint-config'] === 'off') {
     return;
   }
@@ -128,10 +137,17 @@ export function lintConfigCallback(
     return;
   }
 
-  return async (document: Document, resolvedRefMap: ResolvedRefMap) => {
+  return async ({ document, resolvedRefMap, config, parsed: { theme = {} } }) => {
+    const command = argv ? getCommandNameFromArgs(argv as Arguments) : undefined;
+
+    if (command === 'check-config') {
+      notifyAboutIncompatibleConfigOptions(theme.openapi);
+    }
+
     const problems = await lintConfig({
       document,
       resolvedRefMap,
+      config,
       severity: (argv['lint-config'] || 'warn') as ProblemSeverity,
     });
 
@@ -144,7 +160,7 @@ export function lintConfigCallback(
       version,
     });
 
-    printConfigLintTotals(fileTotals);
+    printConfigLintTotals(fileTotals, command);
 
     if (fileTotals.errors > 0) {
       throw new ConfigValidationError();

@@ -3,7 +3,7 @@
 Redocly CLI in its core has a type tree which defines the structure of the API description.
 Redocly CLI then uses it to do a type-aware traversal of an OpenAPI description.
 
-The type tree is built from top level `Types` which can link to child types. For example, here is a [visual reference to the OpenAPI types structure](../../openapi-visual-reference/openapi-node-types.md). You can also check [the code itself](https://github.com/Redocly/redocly-cli/tree/main/packages/core/src/types) for information about specific versions of OpenAPI and other supported document types.
+The type tree is built from top level `Types` which can link to child types. For example, here is a [visual reference to the OpenAPI types structure](https://redocly.com/docs/openapi-visual-reference/openapi-node-types/). You can also check [the code itself](https://github.com/Redocly/redocly-cli/tree/main/packages/core/src/types) for information about specific versions of OpenAPI and other supported document types.
 
 The type tree can be extended by exporting the `typeExtension` function from a custom plugin.
 
@@ -38,23 +38,25 @@ Note the quotes around the `owner-team` key since it contains a hyphen `-`. Thes
 To include the new type in the type tree, the plugin must add the type and modify the parent type, which in this example is `info`. This is done by returning a `typeExtension` structure, as shown in the example below (this example is in `plugins/example-type-extension.js`, this filename is used again in the configuration example later):
 
 ```js
-module.exports = {
-  id: 'example-type-extension',
-  typeExtension: {
-    oas3(types) {
-      return {
-        ...types,
-        XMetaData: XMetaData,
-        Info: {
-          ...types.Info,
-          properties: {
-            ...types.Info.properties,
-            'x-metadata': 'XMetaData',
-          }
-        }
-      };
-    }
-  }
+module.exports = function typeExtensionsPlugin() {
+  return {
+    id: 'example-type-extension',
+    typeExtension: {
+      oas3(types) {
+        return {
+          ...types,
+          XMetaData: XMetaData,
+          Info: {
+            ...types.Info,
+            properties: {
+              ...types.Info.properties,
+              'x-metadata': 'XMetaData',
+            },
+          },
+        };
+      },
+    },
+  };
 };
 ```
 

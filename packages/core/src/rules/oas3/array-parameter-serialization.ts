@@ -1,6 +1,7 @@
-import { Oas3Rule, Oas3Visitor } from '../../visitors';
 import { isRef } from '../../ref-utils';
-import { Oas3_1Schema, Oas3Parameter } from '../../typings/openapi';
+
+import type { Oas3Rule, Oas3Visitor } from '../../visitors';
+import type { Oas3_1Schema, Oas3Parameter } from '../../typings/openapi';
 
 export type ArrayParameterSerializationOptions = {
   in?: string[];
@@ -11,15 +12,18 @@ export const ArrayParameterSerialization: Oas3Rule = (
 ): Oas3Visitor => {
   return {
     Parameter: {
-      leave(node: Oas3Parameter, ctx) {
+      leave(node, ctx) {
         if (!node.schema) {
           return;
         }
-        const schema = isRef(node.schema)
-          ? ctx.resolve<Oas3_1Schema>(node.schema).node
-          : (node.schema as Oas3_1Schema);
+        const schema = (
+          isRef(node.schema) ? ctx.resolve(node.schema).node : node.schema
+        ) as Oas3_1Schema;
 
-        if (schema && shouldReportMissingStyleAndExplode(node, schema, options)) {
+        if (
+          schema &&
+          shouldReportMissingStyleAndExplode(node as Oas3Parameter<Oas3_1Schema>, schema, options)
+        ) {
           ctx.report({
             message: `Parameter \`${node.name}\` should have \`style\` and \`explode \` fields`,
             location: ctx.location,
@@ -31,7 +35,7 @@ export const ArrayParameterSerialization: Oas3Rule = (
 };
 
 function shouldReportMissingStyleAndExplode(
-  node: Oas3Parameter,
+  node: Oas3Parameter<Oas3_1Schema>,
   schema: Oas3_1Schema,
   options: ArrayParameterSerializationOptions
 ) {

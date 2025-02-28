@@ -3,10 +3,10 @@ import * as colorette from 'colorette';
 import { getPort } from 'get-port-please';
 import { readFileSync, promises as fsPromises } from 'fs';
 import * as path from 'path';
-
 import { startHttpServer, startWsServer, respondWithGzip, mimeTypes } from './server';
-import type { IncomingMessage } from 'http';
 import { isSubdir } from '../../../utils/miscellaneous';
+
+import type { IncomingMessage } from 'http';
 
 function getPageHTML(
   htmlTemplate: string,
@@ -35,8 +35,8 @@ function getPageHTML(
   <script src="/hot.js"></script>
   <script src="${
     useRedocPro
-      ? 'https://cdn.redoc.ly/reference-docs/latest/redocly-reference-docs.min.js'
-      : 'https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js'
+      ? 'https://cdn.redocly.com/reference-docs/latest/redocly-reference-docs.min.js'
+      : 'https://cdn.redocly.com/redoc/latest/bundles/redoc.standalone.js'
   }"></script>
 `,
     redocHTML: `
@@ -45,7 +45,7 @@ function getPageHTML(
     var container = document.getElementById('redoc');
     ${
       useRedocPro
-        ? "window[window.__REDOC_EXPORT].setPublicPath('https://cdn.redoc.ly/reference-docs/latest/');"
+        ? "window[window.__REDOC_EXPORT].setPublicPath('https://cdn.redocly.com/reference-docs/latest/');"
         : ''
     }
     window[window.__REDOC_EXPORT].init("/openapi.json", ${JSON.stringify(redocOptions)}, container)
@@ -60,7 +60,8 @@ export default async function startPreviewServer(
     getBundle,
     getOptions,
     useRedocPro,
-  }: { getBundle: Function; getOptions: Function; useRedocPro: boolean }
+  }: // eslint-disable-next-line @typescript-eslint/ban-types
+  { getBundle: Function; getOptions: Function; useRedocPro: boolean }
 ) {
   const defaultTemplate = path.join(__dirname, 'default.hbs');
   const handler = async (request: IncomingMessage, response: any) => {

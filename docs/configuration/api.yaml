@@ -17,6 +17,9 @@ additionalProperties:
     root:
       type: string
       description: The path to the root API description file of the specified API.
+    output:
+      type: string
+      description: The path to the output file produced by the `bundle` command.
     labels:
       type: array
       description: >-
@@ -59,7 +62,6 @@ additionalProperties:
         Change the severity level of any rules in your extended configurations.
         Some rules may also receive additional configurations.
         Rules run during the `lint` command after preprocessors.
-        They run during the `bundle` command between preprocessors and decorators if the `--lint` option is used.
       additionalProperties:
         description: >-
           List each rule by name.

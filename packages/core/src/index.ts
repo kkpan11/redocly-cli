@@ -1,20 +1,30 @@
-export { BundleOutputFormat, readFileFromUrl, slash, doesYamlFileExist, isTruthy } from './utils';
+export {
+  BundleOutputFormat,
+  readFileFromUrl,
+  slash,
+  doesYamlFileExist,
+  isTruthy,
+  getProxyAgent,
+  pause,
+} from './utils';
 export { Oas3_1Types } from './types/oas3_1';
+export { Arazzo1Types } from './types/arazzo';
 export { Oas3Types } from './types/oas3';
 export { Oas2Types } from './types/oas2';
-export { AsyncApi2Types } from './types/asyncapi';
+export { AsyncApi2Types } from './types/asyncapi2';
+export { AsyncApi3Types } from './types/asyncapi3';
 export { ConfigTypes } from './types/redocly-yaml';
 export type {
   Oas3Definition,
   Oas3_1Definition,
   Oas3Components,
+  Oas3_1Components,
   Oas3PathItem,
   Oas3Paths,
   Oas3ComponentName,
   Oas3Schema,
   Oas3_1Schema,
   Oas3Tag,
-  Oas3_1Webhooks,
   Referenced,
   OasRef,
 } from './typings/openapi';
@@ -41,7 +51,9 @@ export {
   ResolvedApi,
 } from './config';
 
-export { RedoclyClient, isRedoclyRegistryURL } from './redocly';
+export { RedoclyClient } from './redocly';
+
+export * from './redocly/domains';
 
 export {
   Source,

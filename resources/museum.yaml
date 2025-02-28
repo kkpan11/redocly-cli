@@ -1,21 +1,24 @@
 openapi: 3.1.0
 info:
   title: Redocly Museum API
-  description: An imaginary, but delightful Museum API for interacting with museum services and information. Built with love by Redocly.
-  version: 1.0.0
+  description: >-
+    Imaginary, but delightful Museum API for interacting with museum services
+    and information. Built with love by Redocly.
+  version: 1.1.1
+  termsOfService: https://redocly.com/subscription-agreement/
   contact:
     email: team@redocly.com
-    url: 'https://redocly.com/docs/cli/'
+    url: https://redocly.com/docs/cli/
   license:
     name: MIT
-    url: 'https://opensource.org/license/mit/ '
+    url: https://opensource.org/license/mit/
 servers:
-  - url: 'https://api.fake-museum-example.com/v1'
+  - url: https://redocly.com/_mock/demo/openapi/museum-api/
 paths:
   /museum-hours:
     get:
       summary: Get museum hours
-      description: Get upcoming museum operating hours
+      description: Get upcoming museum operating hours.
       operationId: getMuseumHours
       tags:
         - Operations
@@ -25,7 +28,7 @@ paths:
         - $ref: '#/components/parameters/PaginationLimit'
       responses:
         '200':
-          description: Success
+          description: Success.
           content:
             application/json:
               schema:
@@ -34,9 +37,9 @@ paths:
                 default_example:
                   $ref: '#/components/examples/GetMuseumHoursResponseExample'
         '400':
-          description: Bad request
+          $ref: '#/components/responses/BadRequest'
         '404':
-          description: Not found
+          $ref: '#/components/responses/NotFound'
   /special-events:
     post:
       summary: Create special events
@@ -54,8 +57,8 @@ paths:
               default_example:
                 $ref: '#/components/examples/CreateSpecialEventRequestExample'
       responses:
-        '200':
-          description: Success
+        '201':
+          description: Created.
           content:
             application/json:
               schema:
@@ -64,9 +67,9 @@ paths:
                 default_example:
                   $ref: '#/components/examples/CreateSpecialEventResponseExample'
         '400':
-          description: Bad request
+          $ref: '#/components/responses/BadRequest'
         '404':
-          description: Not found
+          $ref: '#/components/responses/NotFound'
     get:
       summary: List special events
       description: Return a list of upcoming special events at the museum.
@@ -80,7 +83,7 @@ paths:
         - $ref: '#/components/parameters/PaginationLimit'
       responses:
         '200':
-          description: Success
+          description: Success.
           content:
             application/json:
               schema:
@@ -89,9 +92,9 @@ paths:
                 default_example:
                   $ref: '#/components/examples/ListSpecialEventsResponseExample'
         '400':
-          description: Bad request
+          $ref: '#/components/responses/BadRequest'
         '404':
-          description: Not found
+          $ref: '#/components/responses/NotFound'
   /special-events/{eventId}:
     get:
       summary: Get special event
@@ -103,7 +106,7 @@ paths:
         - $ref: '#/components/parameters/EventId'
       responses:
         '200':
-          description: Success
+          description: Success.
           content:
             application/json:
               schema:
@@ -112,12 +115,12 @@ paths:
                 default_example:
                   $ref: '#/components/examples/GetSpecialEventResponseExample'
         '400':
-          description: Bad request
+          $ref: '#/components/responses/BadRequest'
         '404':
-          description: Not found
+          $ref: '#/components/responses/NotFound'
     patch:
       summary: Update special event
-      description: Update the details of a special event
+      description: Update the details of a special event.
       operationId: updateSpecialEvent
       tags:
         - Events
@@ -134,7 +137,7 @@ paths:
                 $ref: '#/components/examples/UpdateSpecialEventRequestExample'
       responses:
         '200':
-          description: Success
+          description: Success.
           content:
             application/json:
               schema:
@@ -143,12 +146,14 @@ paths:
                 default_example:
                   $ref: '#/components/examples/UpdateSpecialEventResponseExample'
         '400':
-          description: Bad request
+          $ref: '#/components/responses/BadRequest'
         '404':
-          description: Not found
+          $ref: '#/components/responses/NotFound'
     delete:
       summary: Delete special event
-      description: Delete a special event from the collection. Allows museum to cancel planned events.
+      description: >-
+        Delete a special event from the collection. Allows museum to cancel
+        planned events.
       operationId: deleteSpecialEvent
       tags:
         - Events
@@ -156,13 +161,13 @@ paths:
         - $ref: '#/components/parameters/EventId'
       responses:
         '204':
-          description: Success - no content
+          description: Success - no content.
         '400':
-          description: Bad request
+          $ref: '#/components/responses/BadRequest'
         '401':
-          description: Unauthorized
+          $ref: '#/components/responses/Unauthorized'
         '404':
-          description: Not found
+          $ref: '#/components/responses/NotFound'
   /tickets:
     post:
       summary: Buy museum tickets
@@ -182,8 +187,8 @@ paths:
               event_entry:
                 $ref: '#/components/examples/BuyEventTicketsRequestExample'
       responses:
-        '200':
-          description: Success
+        '201':
+          description: Created.
           content:
             application/json:
               schema:
@@ -194,13 +199,15 @@ paths:
                 event_entry:
                   $ref: '#/components/examples/BuyEventTicketsResponseExample'
         '400':
-          description: Bad request
+          $ref: '#/components/responses/BadRequest'
         '404':
-          description: Not found
+          $ref: '#/components/responses/NotFound'
   /tickets/{ticketId}/qr:
     get:
       summary: Get ticket QR code
-      description: Return an image of your ticket with scannable QR code. Used for event entry.
+      description: >-
+        Return an image of your ticket with scannable QR code. Used for event
+        entry.
       operationId: getTicketCode
       tags:
         - Tickets
@@ -208,19 +215,21 @@ paths:
         - $ref: '#/components/parameters/TicketId'
       responses:
         '200':
-          description: Scannable event ticket in image format
+          description: Scannable event ticket in image format.
           content:
             image/png:
               schema:
                 $ref: '#/components/schemas/GetTicketCodeResponse'
         '400':
-          description: Bad request
+          $ref: '#/components/responses/BadRequest'
         '404':
-          description: Not found
+          $ref: '#/components/responses/NotFound'
 components:
   schemas:
     TicketType:
-      description: Type of ticket being purchased. Use `general` for regular museum entry and `event` for tickets to special events.
+      description: >-
+        Type of ticket being purchased. Use `general` for regular museum entry
+        and `event` for tickets to special events.
       type: string
       enum:
         - event
@@ -229,7 +238,7 @@ components:
     Date:
       type: string
       format: date
-      example: 2023-10-29
+      example: '2023-10-29'
     Email:
       description: Email address for ticket purchaser.
       type: string
@@ -246,7 +255,9 @@ components:
         ticketType:
           $ref: '#/components/schemas/TicketType'
         eventId:
-          description: Unique identifier for a special event. Required if purchasing tickets for the museum's special events.
+          description: >-
+            Unique identifier for a special event. Required if purchasing
+            tickets for the museum's special events.
           $ref: '#/components/schemas/EventId'
         ticketDate:
           description: Date that the ticket is valid for.
@@ -296,7 +307,7 @@ components:
         - ticketDate
         - confirmationCode
     GetTicketCodeResponse:
-      description: An image of a ticket with a QR code used for museum or event entry.
+      description: Image of a ticket with a QR code used for museum or event entry.
       type: string
       format: binary
     GetMuseumHoursResponse:
@@ -311,17 +322,21 @@ components:
         date:
           description: Date the operating hours apply to.
           $ref: '#/components/schemas/Date'
-          example: 02-02-2022
+          example: '2024-12-31'
         timeOpen:
           type: string
-          pattern: '^([01]\d|2[0-3]):?([0-5]\d)$'
-          description: Time the museum opens on a specific date. Uses 24 hour time format (`HH:mm`).
-          example: 09:00
+          pattern: ^([01]\d|2[0-3]):?([0-5]\d)$
+          description: >-
+            Time the museum opens on a specific date. Uses 24 hour time format
+            (`HH:mm`).
+          example: '09:00'
         timeClose:
-          description: Time the museum closes on a specific date. Uses 24 hour time format (`HH:mm`).
+          description: >-
+            Time the museum closes on a specific date. Uses 24 hour time format
+            (`HH:mm`).
           type: string
-          pattern: '^([01]\d|2[0-3]):?([0-5]\d)$'
-          example: 18:00
+          pattern: ^([01]\d|2[0-3]):?([0-5]\d)$
+          example: '18:00'
       required:
         - date
         - timeOpen
@@ -333,28 +348,31 @@ components:
       example: 3be6453c-03eb-4357-ae5a-984a0e574a54
     EventName:
       type: string
-      description: Name of the special event
+      description: Name of the special event.
       example: Pirate Coding Workshop
     EventLocation:
       type: string
-      description: Location where the special event is held
+      description: Location where the special event is held.
       example: Computer Room
     EventDescription:
       type: string
-      description: Description of the special event
-      example: Captain Blackbeard shares his love of the C...language. And possibly Arrrrr (R lang).
+      description: Description of the special event.
+      example: >-
+        Captain Blackbeard shares his love of the C...language. And possibly
+        Arrrrr (R lang).
     EventDates:
       type: array
       items:
         $ref: '#/components/schemas/Date'
-      description: List of planned dates for the special event
+      description: List of planned dates for the special event.
     EventPrice:
-      description: Price of a ticket for the special event
+      description: Price of a ticket for the special event.
       type: number
       format: float
       example: 25
     CreateSpecialEventRequest:
       description: Request payload for creating new special events at the museum.
+      type: object
       properties:
         name:
           $ref: '#/components/schemas/EventName'
@@ -373,7 +391,10 @@ components:
         - dates
         - price
     UpdateSpecialEventRequest:
-      description: Request payload for updating an existing special event. Only included fields are updated in the event.
+      description: >-
+        Request payload for updating an existing special event. Only included
+        fields are updated in the event.
+      type: object
       properties:
         name:
           $ref: '#/components/schemas/EventName'
@@ -386,12 +407,13 @@ components:
         price:
           $ref: '#/components/schemas/EventPrice'
     ListSpecialEventsResponse:
-      description: A list of upcoming special events
+      description: List of upcoming special events.
       type: array
       items:
         $ref: '#/components/schemas/SpecialEventResponse'
     SpecialEventResponse:
       description: Information about a special event.
+      type: object
       properties:
         eventId:
           $ref: '#/components/schemas/EventId'
@@ -412,6 +434,15 @@ components:
         - eventDescription
         - dates
         - price
+    Error:
+      type: object
+      properties:
+        type:
+          type: string
+          example: object
+        title:
+          type: string
+          example: Validation failed
   securitySchemes:
     MuseumPlaceholderAuth:
       type: http
@@ -421,14 +452,14 @@ components:
       summary: General entry ticket
       value:
         ticketType: general
-        ticketDate: 2023-09-07
+        ticketDate: '2023-09-07'
         email: todd@example.com
     BuyEventTicketsRequestExample:
       summary: Special event ticket
       value:
         ticketType: general
         eventId: dad4bce8-f5cb-4078-a211-995864315e39
-        ticketDate: 2023-09-05
+        ticketDate: '2023-09-05'
         email: todd@example.com
     BuyGeneralTicketsResponseExample:
       summary: General entry ticket
@@ -436,7 +467,7 @@ components:
         message: Museum general entry ticket purchased
         ticketId: 382c0820-0530-4f4b-99af-13811ad0f17a
         ticketType: general
-        ticketDate: 2023-09-07
+        ticketDate: '2023-09-07'
         confirmationCode: ticket-general-e5e5c6-dce78
     BuyEventTicketsResponseExample:
       summary: Special event ticket
@@ -445,17 +476,20 @@ components:
         ticketId: b811f723-17b2-44f7-8952-24b03e43d8a9
         eventName: Mermaid Treasure Identification and Analysis
         ticketType: event
-        ticketDate: 2023-09-05
+        ticketDate: '2023-09-05'
         confirmationCode: ticket-event-9c55eg-8v82a
     CreateSpecialEventRequestExample:
       summary: Create special event
       value:
         name: Mermaid Treasure Identification and Analysis
         location: Under the seaaa 🦀 🎶 🌊.
-        eventDescription: Join us as we review and classify a rare collection of 20 thingamabobs, gadgets, gizmos, whoosits, and whatsits, kindly donated by Ariel.
+        eventDescription: >-
+          Join us as we review and classify a rare collection of 20
+          thingamabobs, gadgets, gizmos, whoosits, and whatsits, kindly donated
+          by Ariel.
         dates:
-          - 2023-09-05
-          - 2023-09-08
+          - '2023-09-05'
+          - '2023-09-08'
         price: 0
     CreateSpecialEventResponseExample:
       summary: Special event created
@@ -463,10 +497,13 @@ components:
         eventId: dad4bce8-f5cb-4078-a211-995864315e39
         name: Mermaid Treasure Identification and Analysis
         location: Under the seaaa 🦀 🎶 🌊.
-        eventDescription: Join us as we review and classify a rare collection of 20 thingamabobs, gadgets, gizmos, whoosits, and whatsits, kindly donated by Ariel.
+        eventDescription: >-
+          Join us as we review and classify a rare collection of 20
+          thingamabobs, gadgets, gizmos, whoosits, and whatsits, kindly donated
+          by Ariel.
         dates:
-          - 2023-09-05
-          - 2023-09-08
+          - '2023-09-05'
+          - '2023-09-08'
         price: 30
     GetSpecialEventResponseExample:
       summary: Get special event
@@ -476,9 +513,9 @@ components:
         location: Temporal Tearoom
         eventDescription: Sip tea with important historical figures.
         dates:
-          - 2023-11-18
-          - 2023-11-25
-          - 2023-12-02
+          - '2023-11-18'
+          - '2023-11-25'
+          - '2023-12-02'
         price: 60
     ListSpecialEventsResponseExample:
       summary: List of special events
@@ -486,87 +523,94 @@ components:
         - eventId: f3e0e76e-e4a8-466e-ab9c-ae36c15b8e97
           name: Sasquatch Ballet
           location: Seattle... probably
-          eventDescription: They're big, they're hairy, but they're also graceful. Come learn how the biggest feet can have the lightest touch.
+          eventDescription: >-
+            They're big, they're hairy, but they're also graceful. Come learn
+            how the biggest feet can have the lightest touch.
           dates:
-            - 2023-12-15
-            - 2023-12-22
+            - '2023-12-15'
+            - '2023-12-22'
           price: 40
         - eventId: 2f14374a-9c65-4ee5-94b7-fba66d893483
           name: Solar Telescope Demonstration
           location: Far from the sun.
           eventDescription: Look at the sun without going blind!
           dates:
-            - 2023-09-07
-            - 2023-09-14
+            - '2023-09-07'
+            - '2023-09-14'
           price: 50
         - eventId: 6aaa61ba-b2aa-4868-b803-603dbbf7bfdb
           name: Cook like a Caveman
           location: Fire Pit on East side
           eventDescription: Learn to cook on an open flame.
           dates:
-            - 2023-11-10
-            - 2023-11-17
-            - 2023-11-24
+            - '2023-11-10'
+            - '2023-11-17'
+            - '2023-11-24'
           price: 5
         - eventId: 602b75e1-5696-4ab8-8c7a-f9e13580f910
           name: Underwater Basket Weaving
           location: Rec Center Pool next door.
           eventDescription: Learn to weave baskets underwater.
           dates:
-            - 2023-09-12
-            - 2023-09-15
+            - '2023-09-12'
+            - '2023-09-15'
           price: 15
         - eventId: dad4bce8-f5cb-4078-a211-995864315e39
           name: Mermaid Treasure Identification and Analysis
           location: Room Sea-12
-          eventDescription: Join us as we review and classify a rare collection of 20 thingamabobs, gadgets, gizmos, whoosits, and whatsits — kindly donated by Ariel.
+          eventDescription: >-
+            Join us as we review and classify a rare collection of 20
+            thingamabobs, gadgets, gizmos, whoosits, and whatsits — kindly
+            donated by Ariel.
           dates:
-            - 2023-09-05
-            - 2023-09-08
+            - '2023-09-05'
+            - '2023-09-08'
           price: 30
         - eventId: 6744a0da-4121-49cd-8479-f8cc20526495
           name: Time Traveler Tea Party
           location: Temporal Tearoom
           eventDescription: Sip tea with important historical figures.
           dates:
-            - 2023-11-18
-            - 2023-11-25
-            - 2023-12-02
+            - '2023-11-18'
+            - '2023-11-25'
+            - '2023-12-02'
           price: 60
         - eventId: 3be6453c-03eb-4357-ae5a-984a0e574a54
           name: Pirate Coding Workshop
           location: Computer Room
-          eventDescription: Captain Blackbeard shares his love of the C...language. And possibly Arrrrr (R lang).
+          eventDescription: >-
+            Captain Blackbeard shares his love of the C...language. And possibly
+            Arrrrr (R lang).
           dates:
-            - 2023-10-29
-            - 2023-10-30
-            - 2023-10-31
+            - '2023-10-29'
+            - '2023-10-30'
+            - '2023-10-31'
           price: 45
         - eventId: 9d90d29a-2af5-4206-97d9-9ea9ceadcb78
           name: Llama Street Art Through the Ages
           location: Auditorium
           eventDescription: Llama street art?! Alpaca my bags -- let's go!
           dates:
-            - 2023-10-29
-            - 2023-10-30
-            - 2023-10-31
+            - '2023-10-29'
+            - '2023-10-30'
+            - '2023-10-31'
           price: 45
         - eventId: a3c7b2c4-b5fb-4ef7-9322-00a919864957
           name: The Great Parrot Debate
           location: Outdoor Amphitheatre
           eventDescription: See leading parrot minds discuss important geopolitical issues.
           dates:
-            - 2023-11-03
-            - 2023-11-10
+            - '2023-11-03'
+            - '2023-11-10'
           price: 35
         - eventId: b92d46b7-4c5d-422b-87a5-287767e26f29
           name: Eat a Bunch of Corn
           location: Cafeteria
           eventDescription: We accidentally bought too much corn. Please come eat it.
           dates:
-            - 2023-11-10
-            - 2023-11-17
-            - 2023-11-24
+            - '2023-11-10'
+            - '2023-11-17'
+            - '2023-11-24'
           price: 5
     UpdateSpecialEventRequestExample:
       summary: Update special event request
@@ -579,10 +623,13 @@ components:
         eventId: dad4bce8-f5cb-4078-a211-995864315e39
         name: Mermaid Treasure Identification and Analysis
         location: On the beach.
-        eventDescription: Join us as we review and classify a rare collection of 20 thingamabobs, gadgets, gizmos, whoosits, and whatsits, kindly donated by Ariel.
+        eventDescription: >-
+          Join us as we review and classify a rare collection of 20
+          thingamabobs, gadgets, gizmos, whoosits, and whatsits, kindly donated
+          by Ariel.
         dates:
-          - 2023-09-05
-          - 2023-09-08
+          - '2023-09-05'
+          - '2023-09-08'
         price: 15
     GetMuseumHoursResponseExample:
       summary: Get hours response
@@ -621,7 +668,7 @@ components:
     PaginationPage:
       name: page
       in: query
-      description: The page number to retrieve.
+      description: Page number to retrieve.
       schema:
         type: integer
         default: 1
@@ -629,7 +676,7 @@ components:
     PaginationLimit:
       name: limit
       in: query
-      description: The number of days per page.
+      description: Number of days per page.
       schema:
         type: integer
         default: 10
@@ -638,7 +685,7 @@ components:
     EventId:
       name: eventId
       in: path
-      description: An identifier for a special event.
+      description: Identifier for a special event.
       required: true
       schema:
         type: string
@@ -647,33 +694,58 @@ components:
     StartDate:
       name: startDate
       in: query
-      description: The starting date to retrieve future operating hours from. Defaults to today's date.
+      description: >-
+        Starting date to retrieve future operating hours from. Defaults to
+        today's date.
       schema:
         type: string
         format: date
-        example: 2023-02-23
+        example: '2023-02-23'
     EndDate:
       name: endDate
       in: query
-      description: The end of a date range to retrieve special events for. Defaults to 7 days after `startDate`.
+      description: >-
+        End of a date range to retrieve special events for. Defaults to 7 days
+        after `startDate`.
       schema:
         type: string
         format: date
-        example: 2023-04-18
+        example: '2023-04-18'
     TicketId:
       name: ticketId
       in: path
-      description: An identifier for a ticket to a museum event. Used to generate ticket image.
+      description: >-
+        Identifier for a ticket to a museum event. Used to generate ticket
+        image.
       required: true
       schema:
         type: string
         format: uuid
         example: a54a57ca-36f8-421b-a6b4-2e8f26858a4c
+  responses:
+    BadRequest:
+      description: Bad request.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Not found.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Unauthorized.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Error'
 tags:
   - name: Operations
     description: Operational information about the museum.
   - name: Events
-    description: Special events hosted by the Museum
+    description: Special events hosted by the museum.
   - name: Tickets
     description: Museum tickets for general entrance or special events.
 security:

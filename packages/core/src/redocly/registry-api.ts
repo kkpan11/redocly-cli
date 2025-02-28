@@ -1,4 +1,6 @@
-import fetch, { RequestInit, HeadersInit } from 'node-fetch';
+import { getProxyAgent, isNotEmptyObject } from '../utils';
+import { getRedoclyDomain } from './domains';
+
 import type {
   NotFoundProblemResponse,
   PrepareFileuploadOKResponse,
@@ -6,8 +8,6 @@ import type {
   PushApiParams,
 } from './registry-api-types';
 import type { AccessTokens, Region } from '../config/types';
-import { DEFAULT_REGION, DOMAINS } from '../config/config';
-import { isNotEmptyObject } from '../utils';
 
 const version = require('../../package.json').version;
 
@@ -18,8 +18,8 @@ export class RegistryApi {
     return isNotEmptyObject(this.accessTokens) && this.accessTokens[this.region];
   }
 
-  getBaseUrl(region: Region = DEFAULT_REGION) {
-    return `https://api.${DOMAINS[region]}/registry`;
+  getBaseUrl() {
+    return `https://api.${getRedoclyDomain()}/registry`;
   }
 
   setAccessTokens(accessTokens: AccessTokens) {
@@ -27,7 +27,7 @@ export class RegistryApi {
     return this;
   }
 
-  private async request(path = '', options: RequestInit = {}, region?: Region) {
+  private async request(path = '', options: RequestInit = {}) {
     const currentCommand =
       typeof process !== 'undefined' ? process.env?.REDOCLY_CLI_COMMAND || '' : '';
     const redoclyEnv = typeof process !== 'undefined' ? process.env?.REDOCLY_ENVIRONMENT || '' : '';
@@ -41,10 +41,13 @@ export class RegistryApi {
       throw new Error('Unauthorized');
     }
 
-    const response = await fetch(
-      `${this.getBaseUrl(region)}${path}`,
-      Object.assign({}, options, { headers })
-    );
+    const requestOptions = {
+      ...options,
+      headers,
+      agent: getProxyAgent(),
+    };
+
+    const response = await fetch(`${this.getBaseUrl()}${path}`, requestOptions);
 
     if (response.status === 401) {
       throw new Error('Unauthorized');
@@ -60,11 +63,10 @@ export class RegistryApi {
 
   async authStatus(
     accessToken: string,
-    region: Region,
     verbose = false
   ): Promise<{ viewerId: string; organizations: string[] }> {
     try {
-      const response = await this.request('', { headers: { authorization: accessToken } }, region);
+      const response = await this.request('', { headers: { authorization: accessToken } });
 
       return await response.json();
     } catch (error) {
@@ -97,8 +99,7 @@ export class RegistryApi {
           filename,
           isUpsert,
         }),
-      },
-      this.region
+      }
     );
 
     if (response.ok) {
@@ -120,26 +121,22 @@ export class RegistryApi {
     batchId,
     batchSize,
   }: PushApiParams) {
-    const response = await this.request(
-      `/${organizationId}/${name}/${version}`,
-      {
-        method: 'PUT',
-        headers: {
-          'content-type': 'application/json',
-          authorization: this.accessToken,
-        } as HeadersInit,
-        body: JSON.stringify({
-          rootFilePath,
-          filePaths,
-          branch,
-          isUpsert,
-          isPublic,
-          batchId,
-          batchSize,
-        }),
-      },
-      this.region
-    );
+    const response = await this.request(`/${organizationId}/${name}/${version}`, {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        authorization: this.accessToken,
+      } as HeadersInit,
+      body: JSON.stringify({
+        rootFilePath,
+        filePaths,
+        branch,
+        isUpsert,
+        isPublic,
+        batchId,
+        batchSize,
+      }),
+    });
 
     if (response.ok) {
       return;

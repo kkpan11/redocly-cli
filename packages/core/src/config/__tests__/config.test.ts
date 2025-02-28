@@ -117,7 +117,9 @@ describe('getMergedConfig', () => {
           "_usedVersions": Set {},
           "configFile": "redocly.yaml",
           "decorators": {
+            "arazzo1": {},
             "async2": {},
+            "async3": {},
             "oas2": {},
             "oas3_0": {},
             "oas3_1": {},
@@ -128,7 +130,9 @@ describe('getMergedConfig', () => {
           "pluginPaths": [],
           "plugins": [],
           "preprocessors": {
+            "arazzo1": {},
             "async2": {},
+            "async3": {},
             "oas2": {},
             "oas3_0": {},
             "oas3_1": {},
@@ -142,7 +146,13 @@ describe('getMergedConfig', () => {
           },
           "recommendedFallback": false,
           "rules": {
+            "arazzo1": {
+              "operation-summary": "warn",
+            },
             "async2": {
+              "operation-summary": "warn",
+            },
+            "async3": {
               "operation-summary": "warn",
             },
             "oas2": {
@@ -222,7 +232,9 @@ describe('getMergedConfig', () => {
           "_usedVersions": Set {},
           "configFile": "redocly.yaml",
           "decorators": {
+            "arazzo1": {},
             "async2": {},
+            "async3": {},
             "oas2": {},
             "oas3_0": {},
             "oas3_1": {},
@@ -233,7 +245,9 @@ describe('getMergedConfig', () => {
           "pluginPaths": [],
           "plugins": [],
           "preprocessors": {
+            "arazzo1": {},
             "async2": {},
+            "async3": {},
             "oas2": {},
             "oas3_0": {},
             "oas3_1": {},
@@ -249,7 +263,15 @@ describe('getMergedConfig', () => {
           },
           "recommendedFallback": false,
           "rules": {
+            "arazzo1": {
+              "no-empty-servers": "error",
+              "operation-summary": "error",
+            },
             "async2": {
+              "no-empty-servers": "error",
+              "operation-summary": "error",
+            },
+            "async3": {
               "no-empty-servers": "error",
               "operation-summary": "error",
             },

@@ -1,6 +1,14 @@
-import { RuleSet, SpecVersion } from '../oas-types';
-import { StyleguideConfig } from './config';
 import { isDefined } from '../utils';
+
+import type {
+  Arazzo1RuleSet,
+  Async2RuleSet,
+  Async3RuleSet,
+  Oas2RuleSet,
+  Oas3RuleSet,
+  SpecVersion,
+} from '../oas-types';
+import type { StyleguideConfig } from './config';
 import type { ProblemSeverity } from '../walk';
 
 type InitializedRule = {
@@ -9,8 +17,8 @@ type InitializedRule = {
   visitor: any;
 };
 
-export function initRules<T extends Function, P extends RuleSet<T>>(
-  rules: P[],
+export function initRules(
+  rules: (Oas3RuleSet | Oas2RuleSet | Async2RuleSet | Async3RuleSet | Arazzo1RuleSet)[],
   config: StyleguideConfig,
   type: 'rules' | 'preprocessors' | 'decorators',
   oasVersion: SpecVersion
@@ -31,19 +39,21 @@ export function initRules<T extends Function, P extends RuleSet<T>>(
           return undefined;
         }
         const severity: ProblemSeverity = ruleSettings.severity;
-
+        const message = ruleSettings.message;
         const visitors = rule(ruleSettings);
 
         if (Array.isArray(visitors)) {
           return visitors.map((visitor: any) => ({
             severity,
             ruleId,
+            message,
             visitor: visitor,
           }));
         }
 
         return {
           severity,
+          message,
           ruleId,
           visitor: visitors, // note: actually it is only one visitor object
         };

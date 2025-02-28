@@ -1,16 +1,16 @@
 import { createElement } from 'react';
 import { createStore, Redoc } from 'redoc';
-import { Config, isAbsoluteUrl } from '@redocly/openapi-core';
-
 import { renderToString } from 'react-dom/server';
 import { ServerStyleSheet } from 'styled-components';
 import { compile } from 'handlebars';
 import { dirname, join, resolve } from 'path';
 import { existsSync, lstatSync, readFileSync } from 'fs';
-
-import type { BuildDocsOptions } from './types';
 import { red } from 'colorette';
+import { isAbsoluteUrl } from '@redocly/openapi-core';
 import { exitWithError } from '../../utils/miscellaneous';
+
+import type { Config } from '@redocly/openapi-core';
+import type { BuildDocsOptions } from './types';
 
 export function getObjectOrJSON(
   openapiOptions: string | Record<string, unknown>,
@@ -37,7 +37,7 @@ export function getObjectOrJSON(
       break;
     default: {
       if (config) {
-        process.stderr.write(`Found ${config.configFile} and using theme.openapi options\n`);
+        process.stdout.write(`Found ${config.configFile} and using theme.openapi options\n`);
 
         return config.theme.openapi ? config.theme.openapi : {};
       }
@@ -60,7 +60,7 @@ export async function getPageHTML(
   }: BuildDocsOptions,
   configPath?: string
 ) {
-  process.stderr.write('Prerendering docs\n');
+  process.stdout.write('Prerendering docs\n');
 
   const apiUrl = redocOptions.specUrl || (isAbsoluteUrl(pathToApi) ? pathToApi : undefined);
   const store = await createStore(api, apiUrl, redocOptions);
@@ -87,7 +87,7 @@ export async function getPageHTML(
 
       </script>`,
     redocHead:
-      `<script src="https://cdn.redoc.ly/redoc/v${redocCurrentVersion}/bundles/redoc.standalone.js"></script>` +
+      `<script src="https://cdn.redocly.com/redoc/v${redocCurrentVersion}/bundles/redoc.standalone.js"></script>` +
       css,
     title: title || api.info.title || 'ReDoc documentation',
     disableGoogleFont,

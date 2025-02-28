@@ -1,4 +1,3 @@
-import isEqual = require('lodash.isequal');
 import { BaseResolver, resolveDocument, makeRefId, makeDocumentFromString } from './resolve';
 import { normalizeVisitors } from './visitors';
 import { normalizeTypes } from './types';
@@ -10,23 +9,23 @@ import {
   SpecMajorVersion,
   SpecVersion,
 } from './oas-types';
-import { isAbsoluteUrl, isRef, Location, refBaseName } from './ref-utils';
+import { isAbsoluteUrl, isExternalValue, isRef, refBaseName } from './ref-utils';
 import { initRules } from './config/rules';
 import { reportUnresolvedRef } from './rules/no-unresolved-refs';
-import { isPlainObject, isTruthy } from './utils';
-import { isRedoclyRegistryURL } from './redocly';
+import { dequal, isPlainObject, isTruthy } from './utils';
+import { isRedoclyRegistryURL } from './redocly/domains';
 import { RemoveUnusedComponents as RemoveUnusedComponentsOas2 } from './decorators/oas2/remove-unused-components';
 import { RemoveUnusedComponents as RemoveUnusedComponentsOas3 } from './decorators/oas3/remove-unused-components';
 import { ConfigTypes } from './types/redocly-yaml';
 
-import type { Oas3Rule, Oas3Visitor, Oas2Visitor } from './visitors';
+import type { Location } from './ref-utils';
+import type { Oas3Visitor, Oas2Visitor } from './visitors';
 import type { NormalizedNodeType, NodeType } from './types';
 import type { WalkContext, UserContext, ResolveResult, NormalizedProblem } from './walk';
 import type { Config, StyleguideConfig } from './config';
 import type { OasRef } from './typings/openapi';
 import type { Document, ResolvedRefMap } from './resolve';
-
-export type Oas3RuleSet = Record<string, Oas3Rule>;
+import type { CollectFn } from './utils';
 
 export enum OasVersion {
   Version2 = 'oas2',
@@ -85,6 +84,7 @@ export async function bundle(
   opts: {
     ref?: string;
     doc?: Document;
+    collectSpecData?: CollectFn;
   } & BundleOptions
 ) {
   const {
@@ -103,6 +103,7 @@ export async function bundle(
   if (document instanceof Error) {
     throw document;
   }
+  opts.collectSpecData?.(document.parsed);
 
   return bundleDocument({
     document,
@@ -162,7 +163,7 @@ export async function bundleDocument(opts: {
   } = opts;
   const specVersion = detectSpec(document.parsed);
   const specMajorVersion = getMajorSpecVersion(specVersion);
-  const rules = config.getRulesForOasVersion(specMajorVersion);
+  const rules = config.getRulesForSpecVersion(specMajorVersion);
   const types = normalizeTypes(
     config.extendTypes(customTypes ?? getTypes(specVersion), specVersion),
     config
@@ -232,7 +233,7 @@ export async function bundleDocument(opts: {
 
   walkDocument({
     document,
-    rootType: types.Root as NormalizedNodeType,
+    rootType: types.Root,
     normalizedVisitors: bundleVisitor,
     resolvedRefMap,
     ctx,
@@ -289,6 +290,23 @@ export function mapTypeToComponent(typeName: string, version: SpecMajorVersion) 
         case 'Schema':
           return 'schemas';
         case 'Parameter':
+          return 'parameters';
+        default:
+          return null;
+      }
+    case SpecMajorVersion.Async3:
+      switch (typeName) {
+        case 'Schema':
+          return 'schemas';
+        case 'Parameter':
+          return 'parameters';
+        default:
+          return null;
+      }
+    case SpecMajorVersion.Arazzo1:
+      switch (typeName) {
+        case 'Root.workflows_items.parameters_items':
+        case 'Root.workflows_items.steps_items.parameters_items':
           return 'parameters';
         default:
           return null;
@@ -360,13 +378,38 @@ function makeBundleVisitor(
         }
       },
     },
+    Example: {
+      leave(node: any, ctx: UserContext) {
+        if (isExternalValue(node) && node.value === undefined) {
+          const resolved = ctx.resolve({ $ref: node.externalValue });
+
+          if (!resolved.location || resolved.node === undefined) {
+            reportUnresolvedRef(resolved, ctx.report, ctx.location);
+            return;
+          }
+
+          if (keepUrlRefs && isAbsoluteUrl(node.externalValue)) {
+            return;
+          }
+
+          node.value = ctx.resolve({ $ref: node.externalValue }).node;
+          delete node.externalValue;
+        }
+      },
+    },
     Root: {
-      enter(root: any, ctx: any) {
+      enter(root: any, ctx: UserContext) {
         rootLocation = ctx.location;
         if (version === SpecMajorVersion.OAS3) {
           components = root.components = root.components || {};
         } else if (version === SpecMajorVersion.OAS2) {
           components = root;
+        } else if (version === SpecMajorVersion.Async2) {
+          components = root.components = root.components || {};
+        } else if (version === SpecMajorVersion.Async3) {
+          components = root.components = root.components || {};
+        } else if (version === SpecMajorVersion.Arazzo1) {
+          components = root.components = root.components || {};
         }
       },
     },
@@ -374,7 +417,7 @@ function makeBundleVisitor(
 
   if (version === SpecMajorVersion.OAS3) {
     visitor.DiscriminatorMapping = {
-      leave(mapping: Record<string, string>, ctx: any) {
+      leave(mapping: Record<string, string>, ctx: UserContext) {
         for (const name of Object.keys(mapping)) {
           const $ref = mapping[name];
           const resolved = ctx.resolve({ $ref });
@@ -384,11 +427,7 @@ function makeBundleVisitor(
           }
 
           const componentType = mapTypeToComponent('Schema', version)!;
-          if (dereference) {
-            saveComponent(componentType, resolved, ctx);
-          } else {
-            mapping[name] = saveComponent(componentType, resolved, ctx);
-          }
+          mapping[name] = saveComponent(componentType, resolved, ctx);
         }
       },
     };
@@ -407,13 +446,17 @@ function makeBundleVisitor(
 
   function saveComponent(
     componentType: string,
-    target: { node: any; location: Location },
+    target: { node: unknown; location: Location },
     ctx: UserContext
   ) {
     components[componentType] = components[componentType] || {};
     const name = getComponentName(target, componentType, ctx);
     components[componentType][name] = target.node;
-    if (version === SpecMajorVersion.OAS3) {
+    if (
+      version === SpecMajorVersion.OAS3 ||
+      version === SpecMajorVersion.Async2 ||
+      version === SpecMajorVersion.Async3
+    ) {
       return `#/components/${componentType}/${name}`;
     } else {
       return `#/${componentType}/${name}`;
@@ -421,8 +464,8 @@ function makeBundleVisitor(
   }
 
   function isEqualOrEqualRef(
-    node: any,
-    target: { node: any; location: Location },
+    node: unknown,
+    target: { node: unknown; location: Location },
     ctx: UserContext
   ) {
     if (
@@ -433,11 +476,11 @@ function makeBundleVisitor(
       return true;
     }
 
-    return isEqual(node, target.node);
+    return dequal(node, target.node);
   }
 
   function getComponentName(
-    target: { node: any; location: Location },
+    target: { node: unknown; location: Location },
     componentType: string,
     ctx: UserContext
   ) {
